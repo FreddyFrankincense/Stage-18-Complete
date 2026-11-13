@@ -1,0 +1,6 @@
+{
+  "name": "Stage 18: Rear Window 3D Reconstruction Workbench",
+  "description": "Interactive 3D architectural workbench, Hero Frame curator, Blender bpy/FFmpeg script generator, and engineering action plan for reconstructing the 1954 Rear Window Paramount Stage 18 set from a 4K Blu-ray remux.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
