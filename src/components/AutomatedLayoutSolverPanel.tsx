@@ -8,7 +8,8 @@ import {
   INITIAL_BUILDING_PARAMETRIC_OVERRIDES,
   ManualFrameVerification,
   ParametricDimensionsSnapshot,
-  STAGE18_APARTMENTS
+  STAGE18_APARTMENTS,
+  Stage18LearnedKnowledgeProfile
 } from '../data/stage18Data';
 import {
   Activity,
@@ -71,6 +72,68 @@ export interface FrameQueueRuntimeItem {
   linkedIterationId?: string;
 }
 
+export interface BatchFrameProgressSegment {
+  frameId: string;
+  index: number;
+  title: string;
+  smpteTimecode: string;
+  focalLengthMm: number;
+  targetApartmentHint: string;
+  zoneShortName: string;
+  mkvStreamOffsetGb: number;
+  mkvStreamShareGb: number;
+  stageStatus: FrameQueueStageStatus;
+  substageProgressPct: number;
+  stageLabel: string;
+  engineUsed?: AnalysisEngineMode;
+  confidenceScore?: number;
+  durationMs?: number;
+  frameEtcMs: number;
+  solvedDimsSummary?: string;
+  linkedIterationId?: string;
+  skipped: boolean;
+}
+
+export interface BatchAnalysisProgressSummary {
+  batchEngineState: 'idle' | 'running' | 'paused' | 'completed';
+  isScanningBatch: boolean;
+  isBatchPaused: boolean;
+  activeQueueCount: number;
+  completedCount: number;
+  flaggedLowConfCount: number;
+  overallBatchPct: number;
+  avgFrameDurationMs: number;
+  avgFramesPerSecond: string;
+  batchElapsedMs: number;
+  estimatedRemainingMs: number;
+  total75GbProcessRemainingMs: number;
+  processedStreamGb: number;
+  totalStreamGb: number;
+  effectiveStreamThroughputGbPerSec: string;
+  activeFrameTitle: string | null;
+  activeStageLabel: string | null;
+  segments: BatchFrameProgressSegment[];
+}
+
+export interface BatchSolverControlActions {
+  startOrResumeBatch: () => void;
+  togglePauseResume: () => void;
+  stepSingleFrame: () => void;
+  resetBatch: () => void;
+  inspectFrameIteration: (iterationId: string) => void;
+}
+
+function parseSmpteToSeconds(smpte: string): number {
+  const parts = smpte.split(':').map((p) => Number(p) || 0);
+  if (parts.length >= 4) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2] + parts[3] / 24;
+  }
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return 1200;
+}
+
 interface AutomatedLayoutSolverPanelProps {
   parametricOverrides: Record<string, BuildingParametricOverride>;
   layoutIterations: ArchitecturalLayoutIteration[];
@@ -96,6 +159,9 @@ interface AutomatedLayoutSolverPanelProps {
   }>;
   mountedSourceSizeGb?: number;
   mountedSourceFileName?: string;
+  batchControlRef?: React.MutableRefObject<BatchSolverControlActions | null>;
+  onBatchProgressUpdate?: (summary: BatchAnalysisProgressSummary) => void;
+  learnedKnowledgeProfile?: Stage18LearnedKnowledgeProfile;
 }
 
 const DEFAULT_SCAN_QUEUE: QueuedScanFrame[] = [
@@ -418,7 +484,8 @@ function computeLocalCvGeometricLayoutDelta(
   telemetry: CvPrepassTelemetry,
   currentState: BuildingParametricOverride,
   lowConfidenceFlags: string[],
-  povCompensationEnabled = true
+  povCompensationEnabled = true,
+  learnedProfile?: Stage18LearnedKnowledgeProfile
 ): {
   proposedValues: ParametricDimensionsSnapshot;
   confidenceScore: number;
@@ -426,6 +493,7 @@ function computeLocalCvGeometricLayoutDelta(
   detectedFeatures: string[];
 } {
   const zoneId = queuedFrame.targetApartmentHint;
+  const learnedZonePrior = learnedProfile?.zonePriors?.[zoneId];
 
   // True Stage 18 POV-Compensated Soundstage Carpentry Targets (built for Jeffries's camera lens)
   const povCompensatedTargets: Record<string, ParametricDimensionsSnapshot> = {
@@ -631,9 +699,36 @@ function computeLocalCvGeometricLayoutDelta(
     'apt-jeffries': povCompensatedTargets['apt-jeffries']
   };
 
-  const target = povCompensationEnabled
+  const rawTarget = povCompensationEnabled
     ? povCompensatedTargets[zoneId] || povCompensatedTargets['apt-thorwald']
     : naiveArchitecturalTargets[zoneId] || naiveArchitecturalTargets['apt-thorwald'];
+
+  // If POV compensation is active and we have a Learned 75GB Corpus Prior for this zone, pre-seed target with learned priors
+  const target: ParametricDimensionsSnapshot =
+    povCompensationEnabled && learnedZonePrior
+      ? {
+          widthFeet: Number((rawTarget.widthFeet * 0.4 + learnedZonePrior.widthFeet * 0.6).toFixed(2)),
+          heightFeet: Number((rawTarget.heightFeet * 0.4 + learnedZonePrior.heightFeet * 0.6).toFixed(2)),
+          depthFeet: Number((rawTarget.depthFeet * 0.4 + learnedZonePrior.depthFeet * 0.6).toFixed(2)),
+          elevationOffsetFeet: learnedZonePrior.elevationOffsetFeet,
+          windowCols: learnedZonePrior.windowCols,
+          windowRows: learnedZonePrior.windowRows,
+          windowRevealInches: Number(
+            (rawTarget.windowRevealInches * 0.4 + learnedZonePrior.windowRevealInches * 0.6).toFixed(2)
+          ),
+          balconyProjectionFeet: learnedZonePrior.balconyProjectionFeet,
+          interiorDepthFeet: Number(
+            (rawTarget.interiorDepthFeet * 0.35 + learnedZonePrior.interiorDepthFeet * 0.65).toFixed(2)
+          ),
+          apparentArchitecturalDepthFeet:
+            learnedZonePrior.apparentArchitecturalDepthFeet ?? rawTarget.apparentArchitecturalDepthFeet,
+          forcedPerspectiveScaleFactor:
+            learnedZonePrior.forcedPerspectiveScaleFactor ?? rawTarget.forcedPerspectiveScaleFactor,
+          cameraSightlineSplayDeg:
+            learnedZonePrior.cameraSightlineSplayDeg ?? rawTarget.cameraSightlineSplayDeg,
+          floorRakePitchDeg: learnedZonePrior.floorRakePitchDeg ?? rawTarget.floorRakePitchDeg
+        }
+      : rawTarget;
 
   const blend = (curr: number, targ: number) => Number((curr * 0.22 + targ * 0.78).toFixed(2));
   const fpScale = target.forcedPerspectiveScaleFactor ?? 0.85;
@@ -662,11 +757,15 @@ function computeLocalCvGeometricLayoutDelta(
   const isLowConfChallenge =
     queuedFrame.simulatedChallenge && queuedFrame.simulatedChallenge !== 'none';
   const focalBonus = queuedFrame.focalLengthMm >= 75 ? 10 : 4;
+  const learnedPriorBonus = learnedProfile ? Math.min(6, learnedProfile.version) : 0;
   const confidenceScore = isLowConfChallenge
     ? queuedFrame.simulatedChallenge === 'venetian_blind_occlusion'
-      ? 58
-      : 54
-    : Math.min(94, Math.max(76, Math.round(76 + focalBonus + (telemetry.orthogonalEdgePct % 9))));
+      ? Math.min(72, 58 + learnedPriorBonus)
+      : Math.min(70, 54 + learnedPriorBonus)
+    : Math.min(
+        97,
+        Math.max(76, Math.round(76 + focalBonus + learnedPriorBonus + (telemetry.orthogonalEdgePct % 9)))
+      );
 
   const radialDist = telemetry.radialDistanceFromJeffFeet ?? 42.0;
   const splayDeg = proposedValues.cameraSightlineSplayDeg ?? 0.0;
@@ -721,7 +820,10 @@ export default function AutomatedLayoutSolverPanel({
   onNavigateToDeltaScript,
   externalDiagnosticPlates = [],
   mountedSourceSizeGb = 74.8,
-  mountedSourceFileName = 'Rear_Window_1954_UHD_Remux_75GB.mkv'
+  mountedSourceFileName = 'Rear_Window_1954_UHD_Remux_75GB.mkv',
+  batchControlRef,
+  onBatchProgressUpdate,
+  learnedKnowledgeProfile
 }: AutomatedLayoutSolverPanelProps) {
   const [preferredEngine, setPreferredEngine] =
     useState<AnalysisEngineMode>('gemini_cloud_hybrid');
@@ -1610,7 +1712,8 @@ export default function AutomatedLayoutSolverPanel({
               focalLengthMm: frame.focalLengthMm,
               targetApartmentHint: frame.targetApartmentHint,
               cvPrepassTelemetry: telemetry,
-              currentParametricState: currentZoneState
+              currentParametricState: currentZoneState,
+              learnedKnowledgeContext: learnedKnowledgeProfile
             })
           });
 
@@ -1698,11 +1801,14 @@ export default function AutomatedLayoutSolverPanel({
           telemetry,
           currentZoneState,
           lowConfidenceFlags,
-          povCompensationEnabled
+          povCompensationEnabled,
+          learnedKnowledgeProfile
         );
         proposedValues = localResult.proposedValues;
         confidenceScore = localResult.confidenceScore;
-        spatialReasoningSummary = localResult.spatialReasoningSummary;
+        spatialReasoningSummary = learnedKnowledgeProfile
+          ? `[Pre-Seeded with 75GB Learned Knowledge Bank v${learnedKnowledgeProfile.version} · ${learnedKnowledgeProfile.totalFramesAssimilated} frames] ${localResult.spatialReasoningSummary}`
+          : localResult.spatialReasoningSummary;
         detectedFeatures = localResult.detectedFeatures;
       }
 
@@ -1916,6 +2022,187 @@ export default function AutomatedLayoutSolverPanel({
     const tenths = totalTenths % 10;
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${tenths}`;
   };
+
+  // Compute 75GB MKV file process metrics and individual per-frame progress segments
+  const featureDurationSec = 6720; // 112m 00s Rear Window (1954) 4K Remux runtime
+  const mkvDemuxZscaleOverheadPerFrameMs = 340; // 75GB EBML seek + HEVC 10-bit decode + zscale PQ-to-Linear overhead
+  const perFrameStreamShareGb =
+    activeQueueCount > 0 ? Number((mountedSourceSizeGb / activeQueueCount).toFixed(2)) : 0;
+
+  const frameProgressSegments: BatchFrameProgressSegment[] = (() => {
+    let waitingOffset = 0;
+    return scanQueue.map((qFrame, idx) => {
+      const rt = queueRuntimeMap[qFrame.id] || {
+        frameId: qFrame.id,
+        stageStatus: 'queued' as FrameQueueStageStatus,
+        substageProgressPct: 0,
+        stageLabel: 'Waiting in Dual-Engine Queue'
+      };
+      const apt = STAGE18_APARTMENTS.find((a) => a.id === qFrame.targetApartmentHint);
+      const zoneShortName = apt
+        ? apt.designation.split(' · ')[0]
+        : qFrame.targetApartmentHint.replace('apt-', '').toUpperCase();
+      const tSec = parseSmpteToSeconds(qFrame.smpteTimecode);
+      const mkvStreamOffsetGb = Number(
+        Math.min(
+          mountedSourceSizeGb,
+          Math.max(0.4, (tSec / featureDurationSec) * mountedSourceSizeGb)
+        ).toFixed(1)
+      );
+      const isProcessing =
+        rt.stageStatus === 'stage1_cv_prepass' ||
+        rt.stageStatus === 'stage2_ai_spatial_solve' ||
+        rt.stageStatus === 'stage3_delta_commit';
+      const isPausedHere = rt.stageStatus === 'paused';
+      const isDone =
+        rt.stageStatus === 'completed_high_conf' || rt.stageStatus === 'completed_low_conf';
+      const isSkipped = rt.stageStatus === 'skipped' || Boolean(qFrame.skipped);
+
+      let frameEtcMs = 0;
+      if (isProcessing || isPausedHere) {
+        frameEtcMs = activeFrameRemainingMs;
+      } else if (!isDone && !isSkipped) {
+        waitingOffset += 1;
+        frameEtcMs = activeFrameRemainingMs + waitingOffset * avgFrameDurationMs;
+      }
+
+      return {
+        frameId: qFrame.id,
+        index: idx + 1,
+        title: qFrame.title,
+        smpteTimecode: qFrame.smpteTimecode,
+        focalLengthMm: qFrame.focalLengthMm,
+        targetApartmentHint: qFrame.targetApartmentHint,
+        zoneShortName,
+        mkvStreamOffsetGb,
+        mkvStreamShareGb: isSkipped ? 0 : perFrameStreamShareGb,
+        stageStatus: rt.stageStatus,
+        substageProgressPct: isDone ? 100 : isSkipped ? 0 : rt.substageProgressPct,
+        stageLabel: rt.stageLabel,
+        engineUsed: rt.engineUsed,
+        confidenceScore: rt.confidenceScore,
+        durationMs: rt.durationMs,
+        frameEtcMs,
+        solvedDimsSummary: rt.solvedDimsSummary,
+        linkedIterationId: rt.linkedIterationId,
+        skipped: isSkipped
+      };
+    });
+  })();
+
+  // Total 75GB file process remaining time (includes 75GB container keyframe seek/zscale + Dual-Engine CV/AI pass)
+  const remaining75GbDemuxMs =
+    batchEngineState === 'completed' || activeQueueCount === 0
+      ? 0
+      : remainingUnstartedFramesCount * mkvDemuxZscaleOverheadPerFrameMs +
+        (isActiveFrameInFlight && activeRuntimeItem
+          ? Math.round(
+              mkvDemuxZscaleOverheadPerFrameMs *
+                Math.max(0, 1 - activeRuntimeItem.substageProgressPct / 100)
+            )
+          : 0);
+
+  const total75GbProcessRemainingMs = estimatedRemainingMs + remaining75GbDemuxMs;
+
+  const processedStreamGb = Number(
+    Math.min(
+      mountedSourceSizeGb,
+      ((completedQueueItems.length +
+        (isActiveFrameInFlight && activeRuntimeItem
+          ? activeRuntimeItem.substageProgressPct / 100
+          : 0)) /
+        Math.max(1, activeQueueCount)) *
+        mountedSourceSizeGb
+    ).toFixed(2)
+  );
+
+  const effectiveStreamThroughputGbPerSec =
+    avgFrameDurationMs + mkvDemuxZscaleOverheadPerFrameMs > 0
+      ? (
+          perFrameStreamShareGb /
+          ((avgFrameDurationMs + mkvDemuxZscaleOverheadPerFrameMs) / 1000)
+        ).toFixed(2)
+      : '0.00';
+
+  const activeFrameObjForSummary = activeFrameId
+    ? scanQueue.find((f) => f.id === activeFrameId) || null
+    : null;
+
+  // Expose imperative batch controls to parent SourceVideoTestLab
+  useEffect(() => {
+    if (!batchControlRef) return;
+    batchControlRef.current = {
+      startOrResumeBatch: () => {
+        if (isScanningBatch && isPausedRef.current) {
+          handleTogglePauseResumeBatch();
+        } else if (!isScanningBatch) {
+          handleRunAutonomousBatchSweep(false);
+        }
+      },
+      togglePauseResume: () => {
+        if (isScanningBatch) {
+          handleTogglePauseResumeBatch();
+        } else {
+          handleRunAutonomousBatchSweep(false);
+        }
+      },
+      stepSingleFrame: () => {
+        handleStepSingleFrame();
+      },
+      resetBatch: () => {
+        handleResetBatchQueue();
+      },
+      inspectFrameIteration: (iterationId: string) => {
+        const found = layoutIterations.find((it) => it.id === iterationId);
+        if (found) {
+          openFrameVerificationWorkbench(found);
+        }
+      }
+    };
+  });
+
+  // Broadcast live batch progress summary up to SourceVideoTestLab
+  useEffect(() => {
+    if (!onBatchProgressUpdate) return;
+    onBatchProgressUpdate({
+      batchEngineState,
+      isScanningBatch,
+      isBatchPaused,
+      activeQueueCount,
+      completedCount: completedQueueItems.length,
+      flaggedLowConfCount: flaggedQueueItems.length,
+      overallBatchPct,
+      avgFrameDurationMs,
+      avgFramesPerSecond,
+      batchElapsedMs,
+      estimatedRemainingMs,
+      total75GbProcessRemainingMs,
+      processedStreamGb,
+      totalStreamGb: mountedSourceSizeGb,
+      effectiveStreamThroughputGbPerSec,
+      activeFrameTitle: activeFrameObjForSummary?.title || null,
+      activeStageLabel: activeRuntimeItem?.stageLabel || null,
+      segments: frameProgressSegments
+    });
+  }, [
+    batchEngineState,
+    isScanningBatch,
+    isBatchPaused,
+    activeQueueCount,
+    completedQueueItems.length,
+    flaggedQueueItems.length,
+    overallBatchPct,
+    avgFrameDurationMs,
+    avgFramesPerSecond,
+    batchElapsedMs,
+    estimatedRemainingMs,
+    total75GbProcessRemainingMs,
+    processedStreamGb,
+    mountedSourceSizeGb,
+    effectiveStreamThroughputGbPerSec,
+    activeFrameId,
+    queueRuntimeMap
+  ]);
 
   // System Resource & Hardware Limit Computed Metrics
   const memoryUsagePct = Math.min(99, Math.round((memoryUsedMb / memoryBudgetMb) * 100));
@@ -2204,12 +2491,19 @@ export default function AutomatedLayoutSolverPanel({
               </div>
             </div>
 
-            {/* Live Batch Telemetry Counters + Real-Time ETC & Processing Speed */}
+            {/* Live Batch Telemetry Counters + Real-Time 75GB Process ETC & Processing Speed */}
             <div className="flex items-center gap-2.5 text-xs font-mono shrink-0 flex-wrap">
               <div className="px-3 py-1.5 rounded-lg bg-[#12161F] border border-white/10">
-                <span className="text-slate-400">PROGRESS: </span>
+                <span className="text-slate-400">FRAMES: </span>
                 <span className="text-white font-semibold tabular-nums">
                   {completedQueueItems.length}/{activeQueueCount} ({overallBatchPct}%)
+                </span>
+              </div>
+              <div className="px-3 py-1.5 rounded-lg bg-[#12161F] border border-white/10">
+                <span className="text-slate-400">75GB SPAN: </span>
+                <span className="text-amber-300 font-semibold tabular-nums">
+                  {processedStreamGb.toFixed(1)}/{mountedSourceSizeGb.toFixed(1)} GB (
+                  {effectiveStreamThroughputGbPerSec} GB/s)
                 </span>
               </div>
               <div className="px-3 py-1.5 rounded-lg bg-[#12161F] border border-white/10">
@@ -2228,18 +2522,20 @@ export default function AutomatedLayoutSolverPanel({
                     ? 'bg-emerald-500/15 border-emerald-400/50 text-emerald-300'
                     : 'bg-[#12161F] border-white/10 text-slate-200'
                 }`}
-                title="Estimated Time to Completion calculated from the average processing speed of the current frame queue"
+                title="Total Estimated Time Remaining for the 75GB file process (EBML seek + zscale HDR transfer + 3-stage CV/AI spatial solver)"
               >
                 <Clock className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-slate-400">ETC:</span>
+                <span className="text-slate-400">75GB PROCESS ETC:</span>
                 <span className="font-bold tabular-nums">
                   {batchEngineState === 'completed'
                     ? '00:00.0 (DONE)'
                     : batchEngineState === 'paused'
-                    ? `${formatEtcDuration(estimatedRemainingMs)} (HOLD)`
+                    ? `${formatEtcDuration(total75GbProcessRemainingMs)} (HOLD)`
                     : batchEngineState === 'running'
-                    ? `${formatEtcDuration(estimatedRemainingMs)} (~${(estimatedRemainingMs / 1000).toFixed(1)}s)`
-                    : `~${formatEtcDuration(estimatedRemainingMs)} (EST)`}
+                    ? `${formatEtcDuration(total75GbProcessRemainingMs)} (~${(
+                        total75GbProcessRemainingMs / 1000
+                      ).toFixed(1)}s)`
+                    : `~${formatEtcDuration(total75GbProcessRemainingMs)} (EST)`}
                 </span>
               </div>
               <div className="px-3 py-1.5 rounded-lg bg-[#12161F] border border-white/10">
@@ -2248,50 +2544,180 @@ export default function AutomatedLayoutSolverPanel({
                   {(batchElapsedMs / 1000).toFixed(1)}s
                 </span>
               </div>
-              <div className="px-3 py-1.5 rounded-lg bg-[#12161F] border border-white/10">
-                <span className="text-slate-400">FLAGGED &lt;75%: </span>
-                <span className="text-amber-400 font-semibold tabular-nums">
-                  {flaggedQueueItems.length}
-                </span>
-              </div>
             </div>
           </div>
 
-          {/* Overall Multi-Segment Batch Progress Bar & Timeline Expectation Readout */}
-          <div className="space-y-1.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] font-mono">
-              <span className="text-slate-300 truncate">
-                {activeRuntimeItem
-                  ? `ACTIVE FRAME: ${activeRuntimeItem.stageLabel}`
-                  : batchEngineState === 'paused'
-                  ? 'SCAN PAUSED — CLICK RESUME OR STEP +1 FRAME TO CONTINUE'
-                  : batchEngineState === 'completed'
-                  ? `SWEEP COMPLETE — ${completedQueueItems.length} FRAMES SOLVED (${flaggedQueueItems.length} LOW-CONFIDENCE FLAGGED)`
-                  : `READY TO SCAN ${activeQueueCount} QUEUED REFERENCE FRAMES`}
-              </span>
+          {/* =================================================================
+              MULTI-SEGMENT INDIVIDUAL FRAME PROGRESS BAR & 75GB FILE TIMELINE
+             ================================================================= */}
+          <div className="bg-[#12161F] border border-white/10 rounded-xl p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] font-mono">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-amber-400 font-semibold shrink-0">
+                  INDIVIDUAL FRAME PROGRESS &amp; 75GB STREAM TIMELINE:
+                </span>
+                <span className="text-slate-300 truncate">
+                  {activeRuntimeItem
+                    ? `Active: ${activeRuntimeItem.stageLabel}`
+                    : batchEngineState === 'paused'
+                    ? 'Paused — Click Resume or Step +1 Frame'
+                    : batchEngineState === 'completed'
+                    ? `Completed ${completedQueueItems.length}/${activeQueueCount} Frames (${mountedSourceSizeGb.toFixed(
+                        1
+                      )} GB Stream Spanned)`
+                    : `Ready to analyze ${activeQueueCount} frames across ${mountedSourceSizeGb.toFixed(
+                        1
+                      )} GB MKV container`}
+                </span>
+              </div>
               <div className="flex items-center gap-3 shrink-0 tabular-nums">
                 <span className="text-slate-400">
-                  {measuredFrameDurations.length > 0
-                    ? `Measured Avg: ${avgFrameDurationMs}ms/frame (${measuredFrameDurations.length} solved)`
-                    : `Baseline Prior: ~${avgFrameDurationMs}ms/frame`}
+                  Solver ETC: {(estimatedRemainingMs / 1000).toFixed(1)}s
                 </span>
                 <span className="text-slate-600">·</span>
-                <span className="text-amber-400 font-semibold">
-                  {overallBatchPct}% Complete · ETC { (estimatedRemainingMs / 1000).toFixed(1) }s
+                <span className="text-amber-300 font-semibold">
+                  Total 75GB Process Remaining: {formatEtcDuration(total75GbProcessRemainingMs)} (
+                  {(total75GbProcessRemainingMs / 1000).toFixed(1)}s)
                 </span>
               </div>
             </div>
-            <div className="w-full h-2.5 bg-[#12161F] border border-white/10 rounded-lg overflow-hidden">
-              <div
-                className={`h-full transition-all duration-200 ${
-                  batchEngineState === 'paused'
-                    ? 'bg-sky-400'
-                    : batchEngineState === 'completed'
-                    ? 'bg-emerald-500'
-                    : 'bg-amber-500'
-                }`}
-                style={{ width: `${overallBatchPct}%` }}
-              />
+
+            {/* Track 1: Segmented Per-Frame Visual Progress Bar (Shows Individual Progress Per Frame) */}
+            <div
+              className="grid gap-1.5"
+              style={{
+                gridTemplateColumns: `repeat(${Math.max(1, frameProgressSegments.length)}, minmax(0, 1fr))`
+              }}
+            >
+              {frameProgressSegments.map((seg) => {
+                const isProcessing =
+                  seg.stageStatus === 'stage1_cv_prepass' ||
+                  seg.stageStatus === 'stage2_ai_spatial_solve' ||
+                  seg.stageStatus === 'stage3_delta_commit';
+                const isPausedHere = seg.stageStatus === 'paused';
+                const isHighConf = seg.stageStatus === 'completed_high_conf';
+                const isLowConf = seg.stageStatus === 'completed_low_conf';
+
+                const fillClass = isProcessing
+                  ? 'bg-amber-400'
+                  : isPausedHere
+                  ? 'bg-sky-400'
+                  : isLowConf
+                  ? 'bg-amber-500'
+                  : isHighConf
+                  ? 'bg-emerald-500'
+                  : 'bg-slate-700';
+
+                return (
+                  <div
+                    key={seg.frameId}
+                    className={`p-2 rounded-lg border transition-colors space-y-1.5 font-mono text-[10px] ${
+                      isProcessing
+                        ? 'bg-[#181E2C] border-amber-400'
+                        : isPausedHere
+                        ? 'bg-[#131D2B] border-sky-400'
+                        : isLowConf
+                        ? 'bg-[#191410] border-amber-500/60'
+                        : isHighConf
+                        ? 'bg-[#0F1918] border-emerald-500/40'
+                        : seg.skipped
+                        ? 'bg-[#0B0D11]/50 border-white/5 opacity-50'
+                        : 'bg-[#0B0D11] border-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-amber-400 font-bold tabular-nums">
+                        F#{String(seg.index).padStart(2, '0')}
+                      </span>
+                      <span className="text-slate-400 tabular-nums truncate">
+                        @{seg.mkvStreamOffsetGb}GB
+                      </span>
+                      <span
+                        className={`font-bold tabular-nums ${
+                          isHighConf
+                            ? 'text-emerald-400'
+                            : isLowConf
+                            ? 'text-amber-400'
+                            : isProcessing
+                            ? 'text-amber-300'
+                            : 'text-slate-300'
+                        }`}
+                      >
+                        {seg.substageProgressPct}%
+                      </span>
+                    </div>
+
+                    {/* Individual Frame Progress Bar */}
+                    <div className="w-full h-2 bg-[#12161F] rounded-xs overflow-hidden border border-white/10">
+                      <div
+                        className={`h-full transition-all duration-150 ${fillClass}`}
+                        style={{ width: `${seg.substageProgressPct}%` }}
+                      />
+                    </div>
+
+                    {/* 3 Sub-Stage Pips (S1: CV, S2: 3D Solve, S3: Gate) */}
+                    <div className="grid grid-cols-3 gap-1 pt-0.5">
+                      <div
+                        className={`h-1 rounded-xs ${
+                          seg.substageProgressPct >= 30 ? fillClass : 'bg-white/10'
+                        }`}
+                        title="Stage 1: Client CV Sobel & Brick-Course Pre-Pass"
+                      />
+                      <div
+                        className={`h-1 rounded-xs ${
+                          seg.substageProgressPct >= 65 ? fillClass : 'bg-white/10'
+                        }`}
+                        title="Stage 2: Dual-Engine 3D Spatial Solve"
+                      />
+                      <div
+                        className={`h-1 rounded-xs ${
+                          seg.substageProgressPct >= 90 ? fillClass : 'bg-white/10'
+                        }`}
+                        title="Stage 3: Layout Delta & Confidence Gate"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between text-[9px] text-slate-400 tabular-nums truncate">
+                      <span className="truncate text-slate-300">{seg.zoneShortName}</span>
+                      <span>
+                        {typeof seg.durationMs === 'number'
+                          ? `${seg.durationMs}ms`
+                          : seg.frameEtcMs > 0
+                          ? `~${(seg.frameEtcMs / 1000).toFixed(1)}s`
+                          : seg.skipped
+                          ? 'SKIP'
+                          : 'WAIT'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Track 2: Cumulative 75GB File Process Bar */}
+            <div className="space-y-1 pt-1">
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 tabular-nums">
+                <span>
+                  CUMULATIVE 75GB MKV PROCESS ({processedStreamGb.toFixed(2)} GB /{' '}
+                  {mountedSourceSizeGb.toFixed(2)} GB STREAM COVERAGE)
+                </span>
+                <span className="text-amber-300 font-semibold">
+                  {overallBatchPct}% Complete · Total Remaining:{' '}
+                  {formatEtcDuration(total75GbProcessRemainingMs)}
+                </span>
+              </div>
+              <div className="w-full h-2 bg-[#0B0D11] border border-white/10 rounded-sm overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-200 ${
+                    batchEngineState === 'paused'
+                      ? 'bg-sky-400'
+                      : batchEngineState === 'completed'
+                      ? 'bg-emerald-500'
+                      : 'bg-amber-500'
+                  }`}
+                  style={{ width: `${overallBatchPct}%` }}
+                />
+              </div>
             </div>
           </div>
 

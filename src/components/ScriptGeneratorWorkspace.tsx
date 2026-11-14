@@ -4,7 +4,8 @@ import {
   BuildingParametricOverride,
   CuratedReferenceFrame,
   LIGHTING_SCENARIOS,
-  LightingScenarioPreset
+  LightingScenarioPreset,
+  Stage18LearnedKnowledgeProfile
 } from '../data/stage18Data';
 import {
   generateBlenderArchitectureScript,
@@ -48,6 +49,7 @@ interface ScriptGeneratorWorkspaceProps {
   initialScriptTab?: ScriptTabId;
   parametricOverrides?: Record<string, BuildingParametricOverride>;
   layoutIterations?: ArchitecturalLayoutIteration[];
+  learnedKnowledgeProfile?: Stage18LearnedKnowledgeProfile;
 }
 
 export default function ScriptGeneratorWorkspace({
@@ -56,7 +58,8 @@ export default function ScriptGeneratorWorkspace({
   onSelectLighting,
   initialScriptTab = 'ffmpeg',
   parametricOverrides,
-  layoutIterations
+  layoutIterations,
+  learnedKnowledgeProfile
 }: ScriptGeneratorWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<ScriptTabId>(initialScriptTab);
 
@@ -89,7 +92,8 @@ export default function ScriptGeneratorWorkspace({
       activeLightingScenario: activeLighting,
       curatedFrames,
       parametricOverrides,
-      layoutIterations
+      layoutIterations,
+      learnedKnowledgeProfile
     }),
     [
       mkvFilePath,
@@ -102,7 +106,8 @@ export default function ScriptGeneratorWorkspace({
       activeLighting,
       curatedFrames,
       parametricOverrides,
-      layoutIterations
+      layoutIterations,
+      learnedKnowledgeProfile
     ]
   );
 
@@ -270,6 +275,7 @@ export default function ScriptGeneratorWorkspace({
       curatedFrames,
       parametricOverrides,
       layoutIterations,
+      learnedKnowledgeProfile,
       compiledScripts: {
         '01_extract_4k_remux_frames.sh': scripts.ffmpeg.content,
         '02_fspy_optical_calibration_guide.json': scripts.fspy.content,
@@ -304,9 +310,14 @@ export default function ScriptGeneratorWorkspace({
             Configure your local 75 GB <code className="text-amber-300">.mkv</code> file path, HDR10
             transfer curve, and Stage 18 scale parameters. All five pipeline scripts dynamically
             compile around your {curatedFrames.filter((f) => f.includedInExport).length} pinned Hero
-            Reference Frames and{' '}
+            Reference Frames,{' '}
             {(layoutIterations || []).filter((it) => it.status === 'approved').length} approved AI/CV
-            3D Layout Iterations.
+            3D Layout Iterations, and{' '}
+            <span className="text-emerald-400 font-semibold">
+              75GB Learned Knowledge Bank v{learnedKnowledgeProfile?.version ?? 1} (
+              {learnedKnowledgeProfile?.totalFramesAssimilated ?? 6} frames assimilated)
+            </span>
+            .
           </p>
         </div>
 

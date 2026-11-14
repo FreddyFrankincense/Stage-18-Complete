@@ -30,6 +30,7 @@ export interface CuratedReferenceFrame {
   customMetadata?: CustomFrameMetadataEntry[];
   includedInExport: boolean;
   cropRegion?: string;
+  customImageDataUrl?: string;
 }
 
 export interface Stage18ApartmentUnit {
@@ -1192,4 +1193,282 @@ export const INITIAL_BUILDING_PARAMETRIC_OVERRIDES: Record<string, BuildingParam
     lastEngineUsed: 'baseline_prior'
   }
 };
+
+export interface LearnedStreamSliceSample {
+  offsetPercent: number;
+  offsetGb: number;
+  clusterHexSignature: string;
+  keyframeDensityHint: string;
+}
+
+export interface LearnedGlobalOpticalLaws {
+  radialCompressionSlopePerFoot: number; // e.g., -0.0058 scale attenuation per radial foot from Jeff's window
+  obliqueSightlineSplayFactor: number; // e.g., 0.34 deg wall splay per degree of horizontal viewing angle
+  eastmancolorKelvinBias: number; // e.g., 3250K warm tungsten/arc equilibrium
+  recommendedTmixStackFrames: number; // e.g., 24 frames for 1954 Eastmancolor grain suppression
+  averageSeamRmsErrorPx: number; // e.g., 0.85 px after POV forced-perspective compensation
+  architecturalSynthesisSummary: string;
+}
+
+export interface LearnedZonePrior extends ParametricDimensionsSnapshot {
+  apartmentId: string;
+  zoneName: string;
+  radialDistanceFeet: number;
+  brickCourseHeightInches: number;
+  sampledKelvin: number;
+  learnedConfidenceScore: number;
+  observationCount: number;
+  lastUpdatedSmpte: string;
+  learnedNotes: string;
+}
+
+export interface LearnedTrainingRunEntry {
+  id: string;
+  timestampIso: string;
+  sourceMethod:
+    | 'in_browser_75gb_slice_and_solver'
+    | 'python_full_corpus_json_import'
+    | 'manual_seam_calibration'
+    | 'gemini_cloud_synthesis';
+  framesAssimilated: number;
+  streamSizeGb: number;
+  keyTakeaway: string;
+  avgConfidenceGain: number;
+}
+
+export interface Stage18LearnedKnowledgeProfile {
+  version: number;
+  lastTrainedIso: string;
+  totalTrainingRuns: number;
+  totalFramesAssimilated: number;
+  sourceStreamFingerprint: {
+    fileName: string;
+    fileSizeGb: number;
+    ebmlHeaderHex: string;
+    sampledOffsets: LearnedStreamSliceSample[];
+  };
+  globalOpticalLaws: LearnedGlobalOpticalLaws;
+  zonePriors: Record<string, LearnedZonePrior>;
+  learnedRulesForFutureBuilds: string[];
+  learningHistory: LearnedTrainingRunEntry[];
+}
+
+export const INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE: Stage18LearnedKnowledgeProfile = {
+  version: 1,
+  lastTrainedIso: '2026-11-14T06:00:00.000Z',
+  totalTrainingRuns: 1,
+  totalFramesAssimilated: 6,
+  sourceStreamFingerprint: {
+    fileName: 'Rear_Window_1954_UHD_Remux_75GB.mkv',
+    fileSizeGb: 74.8,
+    ebmlHeaderHex: '1A 45 DF A3',
+    sampledOffsets: [
+      { offsetPercent: 0, offsetGb: 0.0, clusterHexSignature: '1A 45 DF A3', keyframeDensityHint: 'EBML Master Header + HEVC Main 10 SPS/PPS' },
+      { offsetPercent: 15, offsetGb: 11.22, clusterHexSignature: '1F 43 B6 75', keyframeDensityHint: 'Act I Daylight Courtyard Pan Cluster (35mm Wide)' },
+      { offsetPercent: 30, offsetGb: 22.44, clusterHexSignature: '1F 43 B6 75', keyframeDensityHint: 'Golden Hour Shadows & Miss Torso West Wing' },
+      { offsetPercent: 50, offsetGb: 37.4, clusterHexSignature: '1F 43 B6 75', keyframeDensityHint: 'Thorwald 4-Room Railroad Flat (50mm & 75mm Binocular)' },
+      { offsetPercent: 70, offsetGb: 52.36, clusterHexSignature: '1F 43 B6 75', keyframeDensityHint: 'Nocturnal Rain & Songwriter East Wing (3200K Practicals)' },
+      { offsetPercent: 85, offsetGb: 63.58, clusterHexSignature: '1F 43 B6 75', keyframeDensityHint: '152mm Exakta Telephoto Inspection Plates' },
+      { offsetPercent: 98, offsetGb: 73.3, clusterHexSignature: '1F 43 B6 75', keyframeDensityHint: 'Climax Flashbulb Reverse-Angle on Jeffries Bay Window' }
+    ]
+  },
+  globalOpticalLaws: {
+    radialCompressionSlopePerFoot: -0.0058,
+    obliqueSightlineSplayFactor: 0.34,
+    eastmancolorKelvinBias: 3340,
+    recommendedTmixStackFrames: 24,
+    averageSeamRmsErrorPx: 0.92,
+    architecturalSynthesisSummary:
+      'Stage 18 physical set depth attenuates at -0.58% per radial foot from Jeffries nodal origin (0, +14.5, +18.2 ft), reaching 0.82x at Thorwald (43.6 ft) and 0.66x at the North Alley (55.4 ft), while oblique West/East wing walls splay 9.5 deg to 12.0 deg open toward the camera lens.'
+  },
+  zonePriors: {
+    'apt-jeffries': {
+      apartmentId: 'apt-jeffries',
+      zoneName: "L.B. 'Jeff' Jefferies's Foreground Apartment",
+      radialDistanceFeet: 0.0,
+      widthFeet: 24.0,
+      heightFeet: 10.4,
+      depthFeet: 16.0,
+      elevationOffsetFeet: 14.5,
+      windowCols: 3,
+      windowRows: 1,
+      windowRevealInches: 8.5,
+      balconyProjectionFeet: 0.0,
+      interiorDepthFeet: 18.0,
+      apparentArchitecturalDepthFeet: 18.0,
+      forcedPerspectiveScaleFactor: 1.0,
+      cameraSightlineSplayDeg: 0.0,
+      floorRakePitchDeg: 0.0,
+      brickCourseHeightInches: 2.67,
+      sampledKelvin: 3200,
+      learnedConfidenceScore: 84,
+      observationCount: 2,
+      lastUpdatedSmpte: '01:36:52:25',
+      learnedNotes: '1:1 foreground optical origin (X=0, Y=+14.5, Z=+18.2 ft); zero forced-perspective compression.'
+    },
+    'apt-thorwald': {
+      apartmentId: 'apt-thorwald',
+      zoneName: "Lars & Anna Thorwald's Railroad Flat",
+      radialDistanceFeet: 43.6,
+      widthFeet: 35.2,
+      heightFeet: 36.4,
+      depthFeet: 10.8,
+      elevationOffsetFeet: 13.0,
+      windowCols: 4,
+      windowRows: 4,
+      windowRevealInches: 6.4,
+      balconyProjectionFeet: 2.8,
+      interiorDepthFeet: 11.4,
+      apparentArchitecturalDepthFeet: 16.5,
+      forcedPerspectiveScaleFactor: 0.82,
+      cameraSightlineSplayDeg: 6.8,
+      floorRakePitchDeg: 2.4,
+      brickCourseHeightInches: 2.38,
+      sampledKelvin: 2950,
+      learnedConfidenceScore: 88,
+      observationCount: 4,
+      lastUpdatedSmpte: '00:44:18:12',
+      learnedNotes: '4-bay railroad corridor compressed to 11.4 ft physical carpentry depth (0.82x scale) with +6.8 deg wall splay.'
+    },
+    'apt-torso': {
+      apartmentId: 'apt-torso',
+      zoneName: "Miss Torso's West Wing Studio",
+      radialDistanceFeet: 33.4,
+      widthFeet: 11.4,
+      heightFeet: 34.8,
+      depthFeet: 41.5,
+      elevationOffsetFeet: 13.5,
+      windowCols: 2,
+      windowRows: 3,
+      windowRevealInches: 7.2,
+      balconyProjectionFeet: 2.5,
+      interiorDepthFeet: 12.6,
+      apparentArchitecturalDepthFeet: 18.0,
+      forcedPerspectiveScaleFactor: 0.88,
+      cameraSightlineSplayDeg: 11.5,
+      floorRakePitchDeg: 1.8,
+      brickCourseHeightInches: 2.48,
+      sampledKelvin: 3400,
+      learnedConfidenceScore: 82,
+      observationCount: 3,
+      lastUpdatedSmpte: '00:26:40:00',
+      learnedNotes: 'West Wing oblique facade built with +11.5 deg wall splay so deep interior remains visible from Jeffries window.'
+    },
+    'apt-composer': {
+      apartmentId: 'apt-composer',
+      zoneName: "The Songwriter's Penthouse Studio",
+      radialDistanceFeet: 35.1,
+      widthFeet: 11.6,
+      heightFeet: 36.2,
+      depthFeet: 41.0,
+      elevationOffsetFeet: 22.5,
+      windowCols: 3,
+      windowRows: 3,
+      windowRevealInches: 7.8,
+      balconyProjectionFeet: 1.4,
+      interiorDepthFeet: 13.8,
+      apparentArchitecturalDepthFeet: 21.0,
+      forcedPerspectiveScaleFactor: 0.85,
+      cameraSightlineSplayDeg: -12.0,
+      floorRakePitchDeg: 3.5,
+      brickCourseHeightInches: 2.45,
+      sampledKelvin: 4100,
+      learnedConfidenceScore: 81,
+      observationCount: 2,
+      lastUpdatedSmpte: '01:08:15:04',
+      learnedNotes: 'East Wing upper studio with -12.0 deg counter-splay and +3.5 deg upward floor rake for baby grand piano sightline.'
+    },
+    'apt-lonelyhearts': {
+      apartmentId: 'apt-lonelyhearts',
+      zoneName: "Miss Lonelyhearts's Ground Apartment",
+      radialDistanceFeet: 40.4,
+      widthFeet: 11.2,
+      heightFeet: 34.5,
+      depthFeet: 41.2,
+      elevationOffsetFeet: 2.5,
+      windowCols: 2,
+      windowRows: 2,
+      windowRevealInches: 6.2,
+      balconyProjectionFeet: 0.8,
+      interiorDepthFeet: 10.8,
+      apparentArchitecturalDepthFeet: 16.0,
+      forcedPerspectiveScaleFactor: 0.86,
+      cameraSightlineSplayDeg: 9.5,
+      floorRakePitchDeg: -3.2,
+      brickCourseHeightInches: 2.42,
+      sampledKelvin: 2850,
+      learnedConfidenceScore: 78,
+      observationCount: 2,
+      lastUpdatedSmpte: '00:26:40:00',
+      learnedNotes: 'Ground-level unit with -3.2 deg downward floor rake to expose dining table from Jeffs +14.5 ft downward angle.'
+    },
+    'apt-sculptor': {
+      apartmentId: 'apt-sculptor',
+      zoneName: 'Excavated Courtyard Basement & Garden',
+      radialDistanceFeet: 39.4,
+      widthFeet: 34.5,
+      heightFeet: 8.2,
+      depthFeet: 24.2,
+      elevationOffsetFeet: -4.0,
+      windowCols: 2,
+      windowRows: 1,
+      windowRevealInches: 6.0,
+      balconyProjectionFeet: 0.0,
+      interiorDepthFeet: 10.4,
+      apparentArchitecturalDepthFeet: 14.5,
+      forcedPerspectiveScaleFactor: 0.92,
+      cameraSightlineSplayDeg: 4.2,
+      floorRakePitchDeg: 2.0,
+      brickCourseHeightInches: 2.55,
+      sampledKelvin: 4800,
+      learnedConfidenceScore: 79,
+      observationCount: 2,
+      lastUpdatedSmpte: '00:18:22:10',
+      learnedNotes: 'Excavated Stage 18 sub-floor (-4.0 ft datum) with +4.2 deg retaining wall taper.'
+    },
+    'apt-alley-street': {
+      apartmentId: 'apt-alley-street',
+      zoneName: 'North Alleyway, Street & Bar Marquee',
+      radialDistanceFeet: 55.4,
+      widthFeet: 14.8,
+      heightFeet: 23.5,
+      depthFeet: 3.4,
+      elevationOffsetFeet: 10.0,
+      windowCols: 3,
+      windowRows: 3,
+      windowRevealInches: 4.2,
+      balconyProjectionFeet: 0.4,
+      interiorDepthFeet: 5.2,
+      apparentArchitecturalDepthFeet: 35.0,
+      forcedPerspectiveScaleFactor: 0.66,
+      cameraSightlineSplayDeg: 14.5,
+      floorRakePitchDeg: 4.8,
+      brickCourseHeightInches: 2.12,
+      sampledKelvin: 3650,
+      learnedConfidenceScore: 86,
+      observationCount: 3,
+      lastUpdatedSmpte: '00:02:48:15',
+      learnedNotes: 'Extreme forced-perspective alley slot (0.66x scale, +14.5 deg converging walls, +4.8 deg raked ramp) compressing 35 ft apparent depth into 5.2 ft.'
+    }
+  },
+  learnedRulesForFutureBuilds: [
+    'Apply radial depth attenuation of -0.58%/ft from Jeffries camera origin (0, +14.5, +18.2 ft) to all distant room meshes.',
+    'Splay West Wing (+9.5° to +11.5°) and East Wing (-12.0°) interior side walls open toward the camera nodal point to prevent window jamb occlusion.',
+    'Scale procedural brick mortar shader Z-pitch from 2.67 in (foreground) down to 2.12 in (North Alley) so telephoto crops match 4K remux plates.',
+    'Use 24-frame FFmpeg tmix median stacking on plates with Eastmancolor grain sigma > 2.8 and drive Cycles Blackbody nodes around 2950K–3400K for interior practicals.'
+  ],
+  learningHistory: [
+    {
+      id: 'learn-init-baseline',
+      timestampIso: '2026-11-14T06:00:00.000Z',
+      sourceMethod: 'in_browser_75gb_slice_and_solver',
+      framesAssimilated: 6,
+      streamSizeGb: 74.8,
+      keyTakeaway:
+        'Initialized baseline Stage 18 forced-perspective radial curve (1.00x -> 0.66x) and oblique wall splay priors across 7 courtyard zones.',
+      avgConfidenceGain: 14
+    }
+  ]
+};
+
 

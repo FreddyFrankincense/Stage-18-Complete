@@ -3,8 +3,10 @@ import {
   BuildingParametricOverride,
   CuratedReferenceFrame,
   INITIAL_BUILDING_PARAMETRIC_OVERRIDES,
+  INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE,
   LightingScenarioPreset,
-  STAGE18_APARTMENTS
+  STAGE18_APARTMENTS,
+  Stage18LearnedKnowledgeProfile
 } from '../data/stage18Data';
 
 export interface ScriptGeneratorConfig {
@@ -20,6 +22,7 @@ export interface ScriptGeneratorConfig {
   curatedFrames: CuratedReferenceFrame[];
   parametricOverrides?: Record<string, BuildingParametricOverride>;
   layoutIterations?: ArchitecturalLayoutIteration[];
+  learnedKnowledgeProfile?: Stage18LearnedKnowledgeProfile;
 }
 
 function smpteToSecondsString(smpte: string, fps = 23.976): string {
@@ -227,13 +230,19 @@ export function generateBlenderArchitectureScript(config: ScriptGeneratorConfig)
   const prioritizedAptIds = Array.from(new Set(activeFrames.map((f) => f.targetApartmentId)));
   const overrides = config.parametricOverrides || INITIAL_BUILDING_PARAMETRIC_OVERRIDES;
 
+  const learned = config.learnedKnowledgeProfile || INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE;
+
   const apartmentsPythonList = STAGE18_APARTMENTS.map((apt) => {
     const isPrioritizedByUser = prioritizedAptIds.includes(apt.id) || apt.id === 'apt-jeffries';
     const ov = overrides[apt.id] || INITIAL_BUILDING_PARAMETRIC_OVERRIDES[apt.id];
-    const fpScale = ov.forcedPerspectiveScaleFactor ?? 0.85;
-    const splayDeg = ov.cameraSightlineSplayDeg ?? 0.0;
-    const rakeDeg = ov.floorRakePitchDeg ?? 0.0;
+    const learnedZone = learned.zonePriors[apt.id];
+    const fpScale =
+      ov.forcedPerspectiveScaleFactor ?? learnedZone?.forcedPerspectiveScaleFactor ?? 0.85;
+    const splayDeg =
+      ov.cameraSightlineSplayDeg ?? learnedZone?.cameraSightlineSplayDeg ?? 0.0;
+    const rakeDeg = ov.floorRakePitchDeg ?? learnedZone?.floorRakePitchDeg ?? 0.0;
     const appDepth = ov.apparentArchitecturalDepthFeet ?? ov.interiorDepthFeet;
+    const brickPitchIn = learnedZone?.brickCourseHeightInches ?? Number((2.67 * fpScale).toFixed(2));
     return `    {
         "id": "${apt.id}",
         "designation": "${apt.designation}",
@@ -248,7 +257,9 @@ export function generateBlenderArchitectureScript(config: ScriptGeneratorConfig)
         "forced_perspective_scale": ${fpScale.toFixed(3)},
         "camera_sightline_splay_deg": ${splayDeg.toFixed(2)},
         "floor_rake_pitch_deg": ${rakeDeg.toFixed(2)},
-        "confidence_pct": ${ov.confidenceScore},
+        "learned_brick_course_height_in": ${brickPitchIn.toFixed(2)},
+        "learned_kelvin_prior": ${learnedZone?.sampledKelvin ?? 3200},
+        "confidence_pct": ${Math.max(ov.confidenceScore, learnedZone?.learnedConfidenceScore ?? 40)},
         "lod_tier": ${isPrioritizedByUser ? 1 : apt.lodTier},
         "prioritized_by_frames": ${isPrioritizedByUser ? 'True' : 'False'},
     }`;
@@ -259,6 +270,10 @@ export function generateBlenderArchitectureScript(config: ScriptGeneratorConfig)
 03_build_stage18_architecture.py
 BLENDER 4.x PROCEDURAL ARCHITECTURAL BUILDER — REAR WINDOW (1954) STAGE 18
 ================================================================================
+Auto-Calibrated by 75GB Learned Knowledge Bank:
+  - Profile Version: v${learned.version} (${learned.totalFramesAssimilated} frames across ${learned.sourceStreamFingerprint.fileSizeGb} GB MKV)
+  - Learned Radial Depth Slope: ${learned.globalOpticalLaws.radialCompressionSlopePerFoot}/ft from Jeff's Camera
+  - Learned Oblique Splay Factor: ${learned.globalOpticalLaws.obliqueSightlineSplayFactor} deg/deg
 Generates:
   1. Paramount Stage 18 Structural Envelope (185' x 50' x 40') + Excavated Basement (-6.0')
   2. L.B. Jefferies's Apartment (#2B) Foreground Interior:
@@ -284,6 +299,14 @@ from mathutils import Vector
 
 UNIT_SCALE = ${unitScale}  # ${config.scaleUnit === 'imperial_feet' ? '1 Blender Unit = 1 Foot (0.3048m)' : 'Metric Meters'}
 ENABLE_FRUSTUM_LOD = ${config.enableFrustumLodCulling ? 'True' : 'False'}
+
+STAGE18_LEARNED_75GB_OPTICAL_LAWS = {
+    "version": ${learned.version},
+    "radial_compression_slope_per_ft": ${learned.globalOpticalLaws.radialCompressionSlopePerFoot},
+    "oblique_sightline_splay_factor": ${learned.globalOpticalLaws.obliqueSightlineSplayFactor},
+    "eastmancolor_kelvin_bias": ${learned.globalOpticalLaws.eastmancolorKelvinBias},
+    "recommended_tmix_stack_frames": ${learned.globalOpticalLaws.recommendedTmixStackFrames},
+}
 
 APARTMENT_ZONES = [
 ${apartmentsPythonList}
@@ -505,6 +528,7 @@ if __name__ == "__main__":
 export function generateCyclesLightingAndCamerasScript(config: ScriptGeneratorConfig): string {
   const activeFrames = config.curatedFrames.filter((f) => f.includedInExport);
   const scenario = config.activeLightingScenario;
+  const learned = config.learnedKnowledgeProfile || INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE;
 
   const cameraEntries = activeFrames
     .map((f, idx) => {
@@ -536,7 +560,7 @@ export function generateCyclesLightingAndCamerasScript(config: ScriptGeneratorCo
 BLENDER 4.x CYCLES LIGHTING GROUPS, AGX COLOR & HERO CAMERA RIG GENERATOR
 ================================================================================
 Active Lighting Scenario: ${scenario.label}
-Key Kelvin Temperature:   ${scenario.cyclesKelvinKey}K
+Key Kelvin Temperature:   ${scenario.cyclesKelvinKey}K (Learned 75GB Corpus Bias: ${learned.globalOpticalLaws.eastmancolorKelvinBias}K)
 Cycles Exposure:          ${scenario.cyclesExposure}
 Target Render Samples:    ${config.cyclesSamples} (Adaptive Sampling + OIDN Denoiser)
 Curated Camera Views:     ${activeFrames.length}
@@ -547,6 +571,8 @@ import os
 import math
 import bpy
 from mathutils import Vector
+
+LEARNED_EASTMANCOLOR_KELVIN_EQUILIBRIUM = ${learned.globalOpticalLaws.eastmancolorKelvinBias}
 
 HERO_CAMERA_SPECS = [
 ${cameraEntries}
@@ -720,11 +746,15 @@ if __name__ == "__main__":
 
 export function generateIterativeLayoutDeltasScript(config: ScriptGeneratorConfig): string {
   const overrides = config.parametricOverrides || INITIAL_BUILDING_PARAMETRIC_OVERRIDES;
+  const learned = config.learnedKnowledgeProfile || INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE;
   const approvedIterations = (config.layoutIterations || []).filter(
     (it) => it.status === 'approved'
   );
 
   const esc = (s?: string) => (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const learnedRulesPy = learned.learnedRulesForFutureBuilds
+    .map((r) => `    "${esc(r)}",`)
+    .join('\n');
 
   const zoneOverridesPy = STAGE18_APARTMENTS.map((apt) => {
     const ov = overrides[apt.id] || INITIAL_BUILDING_PARAMETRIC_OVERRIDES[apt.id];
@@ -820,6 +850,10 @@ Usage inside Blender 4.2+ Scripting Workspace or CLI:
 import bpy
 import bmesh
 from mathutils import Vector
+
+LEARNED_75GB_CORPUS_RULES = [
+${learnedRulesPy}
+]
 
 CONVERGED_STAGE18_OVERRIDES = {
 ${zoneOverridesPy}

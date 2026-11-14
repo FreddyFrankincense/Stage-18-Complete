@@ -586,7 +586,7 @@ export default function HeroFrameCurator({
     curatedFrames.find((f) => f.id === selectedFrameId) || curatedFrames[0];
 
   const activeUploadedImageUrl = selectedFrame
-    ? uploadedImagesByFrameId[selectedFrame.id] || null
+    ? uploadedImagesByFrameId[selectedFrame.id] || selectedFrame.customImageDataUrl || null
     : null;
 
   const filteredFrames =
@@ -796,7 +796,8 @@ export default function HeroFrameCurator({
       const ctx = offscreen.getContext('2d');
       if (!ctx) return;
 
-      const frameUploadedUrl = uploadedImagesByFrameId[frame.id] || null;
+      const frameUploadedUrl =
+        uploadedImagesByFrameId[frame.id] || frame.customImageDataUrl || null;
       let loadedImg: HTMLImageElement | null = null;
 
       if (frameUploadedUrl) {

@@ -67,12 +67,18 @@ export default function ActionPlanAndBarriers({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 p-1 bg-[#12161F] border border-white/10 rounded-lg shrink-0">
             <button
               onClick={() => onSwitchMode('plan')}
-              className="px-4 py-2 text-xs font-medium bg-[#12161F] text-slate-200 border border-white/15 rounded-lg hover:border-white/30 transition-colors whitespace-nowrap shrink-0"
+              className="px-3.5 py-2 text-xs font-medium text-slate-300 hover:text-white rounded-md transition-colors whitespace-nowrap shrink-0"
             >
-              ← View 6-Phase Action Plan
+              01. 6-Phase Action Plan ({completedTaskIds.length}/{allTasks.length})
+            </button>
+            <button
+              onClick={() => onSwitchMode('barriers')}
+              className="px-3.5 py-2 text-xs font-semibold bg-amber-500 text-slate-950 rounded-md transition-colors whitespace-nowrap shrink-0"
+            >
+              02. 8 Technical Barriers &amp; Mitigations
             </button>
           </div>
         </div>
@@ -191,18 +197,35 @@ export default function ActionPlanAndBarriers({
           </p>
         </div>
 
-        <div className="bg-[#12161F] border border-white/10 rounded-xl p-4 min-w-[280px] shrink-0">
-          <div className="flex items-center justify-between text-xs font-mono mb-2">
-            <span className="text-slate-400">PIPELINE EXECUTION PROGRESS</span>
-            <span className="text-amber-400 font-semibold">
-              {completedTaskIds.length}/{allTasks.length} Tasks ({completedHours}/{totalHours}h)
-            </span>
+        <div className="flex flex-col items-end gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 p-1 bg-[#12161F] border border-white/10 rounded-lg">
+            <button
+              onClick={() => onSwitchMode('plan')}
+              className="px-3.5 py-2 text-xs font-semibold bg-amber-500 text-slate-950 rounded-md transition-colors whitespace-nowrap shrink-0"
+            >
+              01. 6-Phase Action Plan ({completedTaskIds.length}/{allTasks.length})
+            </button>
+            <button
+              onClick={() => onSwitchMode('barriers')}
+              className="px-3.5 py-2 text-xs font-medium text-slate-300 hover:text-white rounded-md transition-colors whitespace-nowrap shrink-0"
+            >
+              02. 8 Technical Barriers &amp; Mitigations
+            </button>
           </div>
-          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-amber-500 transition-all duration-200"
-              style={{ width: `${(completedTaskIds.length / allTasks.length) * 100}%` }}
-            />
+
+          <div className="bg-[#12161F] border border-white/10 rounded-xl p-3.5 min-w-[280px] w-full">
+            <div className="flex items-center justify-between text-xs font-mono mb-1.5">
+              <span className="text-slate-400">PIPELINE EXECUTION PROGRESS</span>
+              <span className="text-amber-400 font-semibold tabular-nums">
+                {completedTaskIds.length}/{allTasks.length} Tasks ({completedHours}/{totalHours}h)
+              </span>
+            </div>
+            <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-amber-500 transition-all duration-200"
+                style={{ width: `${(completedTaskIds.length / allTasks.length) * 100}%` }}
+              />
+            </div>
           </div>
         </div>
       </div>
