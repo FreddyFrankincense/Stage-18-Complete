@@ -3,25 +3,24 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
+  BuildingParametricOverride,
   CAMERA_OPTICAL_PRESETS,
   CameraOpticalPreset,
   CuratedReferenceFrame,
+  INITIAL_BUILDING_PARAMETRIC_OVERRIDES,
   LIGHTING_SCENARIOS,
   LightingScenarioPreset,
   STAGE18_APARTMENTS,
   Stage18ApartmentUnit
 } from '../data/stage18Data';
 import {
+  Activity,
   Camera,
   ChevronDown,
   ChevronUp,
   Compass,
   Crosshair,
-  Eye,
-  Flame,
   Layers,
-  Maximize2,
-  Sparkles,
   Sun,
   Video,
   Zap
@@ -35,7 +34,14 @@ interface Stage18Viewport3DProps {
   activeLighting: LightingScenarioPreset;
   onSelectLighting: (lighting: LightingScenarioPreset) => void;
   curatedFrames: CuratedReferenceFrame[];
-  onNavigateToTab: (tab: 'workbench' | 'frames' | 'plan' | 'scripts' | 'barriers') => void;
+  onNavigateToTab: (
+    tab: 'workbench' | 'sourcelab' | 'frames' | 'plan' | 'scripts' | 'barriers'
+  ) => void;
+  liveProjectedTextureUrl?: string | null;
+  onClearLiveProjection?: () => void;
+  parametricOverrides?: Record<string, BuildingParametricOverride>;
+  showConfidenceHeatmap?: boolean;
+  onToggleConfidenceHeatmap?: () => void;
 }
 
 // Reusable module-scope math objects to ensure zero GC inside the render loop
@@ -140,17 +146,25 @@ export default function Stage18Viewport3D({
   activeLighting,
   onSelectLighting,
   curatedFrames,
-  onNavigateToTab
+  onNavigateToTab,
+  liveProjectedTextureUrl,
+  onClearLiveProjection,
+  parametricOverrides = INITIAL_BUILDING_PARAMETRIC_OVERRIDES,
+  showConfidenceHeatmap = false,
+  onToggleConfidenceHeatmap
 }: Stage18Viewport3DProps) {
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const [showInspector, setShowInspector] = useState(true);
   const [showWireframeGrid, setShowWireframeGrid] = useState(false);
+  const [showPovSightlineFrustum, setShowPovSightlineFrustum] = useState(true);
   const [flashPulseActive, setFlashPulseActive] = useState(false);
   const [hoveredAptName, setHoveredAptName] = useState<string | null>(null);
+  const lastHoveredRef = useRef<string | null>(null);
 
   // Mutable refs for the WebGL loop so React state updates never recreate the scene
   const requestRenderRef = useRef<() => void>(() => {});
+  const applyProjectedTextureRef = useRef<(url: string | null) => void>(() => {});
   const cameraTargetPosRef = useRef(new THREE.Vector3(...activeCameraPreset.position));
   const cameraLookAtRef = useRef(new THREE.Vector3(...activeCameraPreset.target));
   const currentLookAtRef = useRef(new THREE.Vector3(...activeCameraPreset.target));
@@ -158,10 +172,30 @@ export default function Stage18Viewport3D({
   const isTransitioningCameraRef = useRef<boolean>(false);
   const flashIntensityRef = useRef<number>(0);
   const wireframeRef = useRef<boolean>(false);
+  const povFrustumRef = useRef<boolean>(true);
+  const heatmapModeRef = useRef<boolean>(showConfidenceHeatmap);
+  const parametricOverridesRef =
+    useRef<Record<string, BuildingParametricOverride>>(parametricOverrides);
   const activeLightingRef = useRef<LightingScenarioPreset>(activeLighting);
   const selectedAptIdRef = useRef<string>(selectedApartment.id);
   const onSelectApartmentRef = useRef(onSelectApartment);
   onSelectApartmentRef.current = onSelectApartment;
+
+  // Sync live projected texture URL changes
+  useEffect(() => {
+    applyProjectedTextureRef.current(liveProjectedTextureUrl || null);
+  }, [liveProjectedTextureUrl]);
+
+  // Sync parametric overrides & confidence heatmap changes into WebGL loop
+  useEffect(() => {
+    parametricOverridesRef.current = parametricOverrides;
+    requestRenderRef.current();
+  }, [parametricOverrides]);
+
+  useEffect(() => {
+    heatmapModeRef.current = showConfidenceHeatmap;
+    requestRenderRef.current();
+  }, [showConfidenceHeatmap]);
 
   // Sync camera preset changes
   useEffect(() => {
@@ -188,11 +222,16 @@ export default function Stage18Viewport3D({
     requestRenderRef.current();
   }, [activeLighting]);
 
-  // Sync wireframe toggle
+  // Sync wireframe & POV frustum toggles
   useEffect(() => {
     wireframeRef.current = showWireframeGrid;
     requestRenderRef.current();
   }, [showWireframeGrid]);
+
+  useEffect(() => {
+    povFrustumRef.current = showPovSightlineFrustum;
+    requestRenderRef.current();
+  }, [showPovSightlineFrustum]);
 
   // Keyboard shortcut 'H' for collapsing/expanding the bottom HUD dock
   useEffect(() => {
@@ -294,6 +333,34 @@ export default function Stage18Viewport3D({
       roughness: 0.78,
       metalness: 0.04
     });
+
+    let currentProjectedTex: THREE.Texture | null = null;
+
+    applyProjectedTextureRef.current = (url: string | null) => {
+      if (currentProjectedTex) {
+        currentProjectedTex.dispose();
+        currentProjectedTex = null;
+      }
+      if (!url) {
+        redBrickMat.map = redBrickTex;
+        buffBrickMat.map = buffBrickTex;
+        redBrickMat.needsUpdate = true;
+        buffBrickMat.needsUpdate = true;
+        requestRenderRef.current();
+        return;
+      }
+      const loader = new THREE.TextureLoader();
+      loader.load(url, (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        currentProjectedTex = tex;
+        redBrickMat.map = tex;
+        buffBrickMat.map = tex;
+        redBrickMat.needsUpdate = true;
+        buffBrickMat.needsUpdate = true;
+        requestRenderRef.current();
+      });
+    };
     const limestoneMat = new THREE.MeshStandardMaterial({
       color: 0xd6d3d1,
       roughness: 0.65,
@@ -796,6 +863,45 @@ export default function Stage18Viewport3D({
     stageGrid.visible = wireframeRef.current;
     scene.add(stageGrid);
 
+    // Camera-POV Sightline Frustum & Non-Orthogonal Wall-Splay Rays from Jeffries's Nodal Tripod
+    const povFrustumGroup = new THREE.Group();
+    const jeffNodalOrigin = new THREE.Vector3(0, 14.5, 16.3);
+    const frustumRayMat = new THREE.LineBasicMaterial({
+      color: 0xf59e0b,
+      transparent: true,
+      opacity: 0.42
+    });
+    const splayWedgeMat = new THREE.LineBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.65
+    });
+
+    STAGE18_APARTMENTS.forEach((apt) => {
+      if (apt.id === 'apt-jeffries') return;
+      const targetPt = new THREE.Vector3(...apt.cameraLookAt);
+      const rayGeo = new THREE.BufferGeometry().setFromPoints([jeffNodalOrigin, targetPt]);
+      povFrustumGroup.add(new THREE.Line(rayGeo, frustumRayMat));
+
+      // Draw splayed wall sightline indicator at each apartment target
+      const ov = INITIAL_BUILDING_PARAMETRIC_OVERRIDES[apt.id];
+      const splayRad = THREE.MathUtils.degToRad(ov?.cameraSightlineSplayDeg || 8.0);
+      const depthDir = new THREE.Vector3()
+        .subVectors(targetPt, jeffNodalOrigin)
+        .normalize()
+        .multiplyScalar((ov?.interiorDepthFeet || 11.0) * 0.45);
+      const leftSplay = depthDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), splayRad);
+      const rightSplay = depthDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), -splayRad);
+      const wedgeGeo = new THREE.BufferGeometry().setFromPoints([
+        targetPt.clone().add(leftSplay),
+        targetPt,
+        targetPt.clone().add(rightSplay)
+      ]);
+      povFrustumGroup.add(new THREE.Line(wedgeGeo, splayWedgeMat));
+    });
+    povFrustumGroup.visible = povFrustumRef.current;
+    scene.add(povFrustumGroup);
+
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
     }
@@ -823,6 +929,38 @@ export default function Stage18Viewport3D({
       };
       frameId = window.setTimeout(poll, 5);
     }
+
+    // Diagnostic Confidence Heatmap Materials (Cyan <45%, Amber 45-79%, Emerald >=80%)
+    const heatmapLowMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      emissive: 0x0369a1,
+      emissiveIntensity: 0.35,
+      roughness: 0.55
+    });
+    const heatmapMedMat = new THREE.MeshStandardMaterial({
+      color: 0xd97706,
+      emissive: 0xb45309,
+      emissiveIntensity: 0.4,
+      roughness: 0.5
+    });
+    const heatmapHighMat = new THREE.MeshStandardMaterial({
+      color: 0x059669,
+      emissive: 0x047857,
+      emissiveIntensity: 0.45,
+      roughness: 0.45
+    });
+
+    const getConfidenceMaterial = (
+      conf: number,
+      defaultMat: THREE.MeshStandardMaterial
+    ): THREE.MeshStandardMaterial => {
+      if (!heatmapModeRef.current) return defaultMat;
+      if (conf >= 80) return heatmapHighMat;
+      if (conf >= 45) return heatmapMedMat;
+      return heatmapLowMat;
+    };
+
+    const gardenDefaultMat = gardenBasin.material as THREE.MeshStandardMaterial;
 
     function applyDynamicLightingAndSceneState(dt: number) {
       const l = activeLightingRef.current;
@@ -855,11 +993,126 @@ export default function Stage18Viewport3D({
       }
 
       stageGrid.visible = wireframeRef.current;
+      povFrustumGroup.visible = povFrustumRef.current || wireframeRef.current;
+
+      // Apply Live Parametric Architectural Overrides, Camera-POV Forced-Perspective Scale, Non-Orthogonal Wall Splay & Floor Rake
+      const ovMap = parametricOverridesRef.current;
+      const baseMap = INITIAL_BUILDING_PARAMETRIC_OVERRIDES;
+
+      const thorOv = ovMap['apt-thorwald'] || baseMap['apt-thorwald'];
+      const thorOff = thorOv.placementOffsetFeet || [0, 0, 0];
+      const thorSplayRad = THREE.MathUtils.degToRad((thorOv.cameraSightlineSplayDeg ?? 6.8) * 0.25);
+      const thorRakeRad = THREE.MathUtils.degToRad((thorOv.floorRakePitchDeg ?? 1.8) * 0.35);
+      northFacade.scale.set(
+        thorOv.widthFeet / baseMap['apt-thorwald'].widthFeet,
+        thorOv.heightFeet / baseMap['apt-thorwald'].heightFeet,
+        thorOv.depthFeet / baseMap['apt-thorwald'].depthFeet
+      );
+      northFacade.position.set(
+        -10 + thorOff[0],
+        15 + (thorOv.elevationOffsetFeet - baseMap['apt-thorwald'].elevationOffsetFeet) + thorOff[1],
+        -29 + thorOff[2]
+      );
+      northFacade.rotation.set(thorRakeRad, thorSplayRad, 0);
+      northCornice.scale.x = northFacade.scale.x;
+      northCornice.position.set(
+        -10 + thorOff[0],
+        34.2 + (thorOv.elevationOffsetFeet - baseMap['apt-thorwald'].elevationOffsetFeet) + thorOff[1],
+        -29 + thorOff[2]
+      );
+      northCornice.rotation.set(thorRakeRad, thorSplayRad, 0);
+      northFacade.material = getConfidenceMaterial(thorOv.confidenceScore, redBrickMat);
+
+      const torsoOv = ovMap['apt-torso'] || baseMap['apt-torso'];
+      const torsoOff = torsoOv.placementOffsetFeet || [0, 0, 0];
+      const torsoSplayRad = THREE.MathUtils.degToRad((torsoOv.cameraSightlineSplayDeg ?? 11.5) * 0.22);
+      const torsoRakeRad = THREE.MathUtils.degToRad((torsoOv.floorRakePitchDeg ?? 1.4) * 0.3);
+      westFacade.scale.set(
+        torsoOv.widthFeet / baseMap['apt-torso'].widthFeet,
+        torsoOv.heightFeet / baseMap['apt-torso'].heightFeet,
+        torsoOv.depthFeet / baseMap['apt-torso'].depthFeet
+      );
+      westFacade.position.set(
+        -29 + torsoOff[0],
+        14 + (torsoOv.elevationOffsetFeet - baseMap['apt-torso'].elevationOffsetFeet) + torsoOff[1],
+        -4 + torsoOff[2]
+      );
+      westFacade.rotation.set(torsoRakeRad, torsoSplayRad, 0);
+      westCornice.scale.z = westFacade.scale.z;
+      westCornice.position.set(
+        -29 + torsoOff[0],
+        32.2 + (torsoOv.elevationOffsetFeet - baseMap['apt-torso'].elevationOffsetFeet) + torsoOff[1],
+        -4 + torsoOff[2]
+      );
+      westCornice.rotation.set(torsoRakeRad, torsoSplayRad, 0);
+      torsoBalcony.scale.x = Math.max(
+        0.5,
+        torsoOv.balconyProjectionFeet / Math.max(0.5, baseMap['apt-torso'].balconyProjectionFeet)
+      );
+      westFacade.material = getConfidenceMaterial(torsoOv.confidenceScore, buffBrickMat);
+
+      const compOv = ovMap['apt-composer'] || baseMap['apt-composer'];
+      const compOff = compOv.placementOffsetFeet || [0, 0, 0];
+      const compSplayRad = THREE.MathUtils.degToRad((compOv.cameraSightlineSplayDeg ?? -12.0) * 0.22);
+      const compRakeRad = THREE.MathUtils.degToRad((compOv.floorRakePitchDeg ?? 2.4) * 0.3);
+      eastFacade.scale.set(
+        compOv.widthFeet / baseMap['apt-composer'].widthFeet,
+        compOv.heightFeet / baseMap['apt-composer'].heightFeet,
+        compOv.depthFeet / baseMap['apt-composer'].depthFeet
+      );
+      eastFacade.position.set(
+        28 + compOff[0],
+        15 + (compOv.elevationOffsetFeet - baseMap['apt-composer'].elevationOffsetFeet) + compOff[1],
+        -4 + compOff[2]
+      );
+      eastFacade.rotation.set(compRakeRad, compSplayRad, 0);
+      eastFacade.material = getConfidenceMaterial(compOv.confidenceScore, stuccoMat);
+
+      const sculpOv = ovMap['apt-sculptor'] || baseMap['apt-sculptor'];
+      const sculpOff = sculpOv.placementOffsetFeet || [0, 0, 0];
+      const sculpRakeRad = THREE.MathUtils.degToRad((sculpOv.floorRakePitchDeg ?? -3.2) * 0.35);
+      gardenBasin.scale.set(
+        sculpOv.widthFeet / baseMap['apt-sculptor'].widthFeet,
+        1.0,
+        sculpOv.depthFeet / baseMap['apt-sculptor'].depthFeet
+      );
+      gardenBasin.position.set(
+        2 + sculpOff[0],
+        -3.95 + (sculpOv.elevationOffsetFeet - baseMap['apt-sculptor'].elevationOffsetFeet) + sculpOff[1],
+        -15 + sculpOff[2]
+      );
+      gardenBasin.rotation.x = sculpRakeRad;
+      gardenBasin.material = getConfidenceMaterial(sculpOv.confidenceScore, gardenDefaultMat);
+
+      const alleyOv = ovMap['apt-alley-street'] || baseMap['apt-alley-street'];
+      const alleyOff = alleyOv.placementOffsetFeet || [0, 0, 0];
+      const alleySplayRad = THREE.MathUtils.degToRad((alleyOv.cameraSightlineSplayDeg ?? 9.5) * 0.3);
+      const alleyRakeRad = THREE.MathUtils.degToRad((alleyOv.floorRakePitchDeg ?? 4.8) * 0.35);
+      streetBackdrop.scale.set(
+        alleyOv.widthFeet / baseMap['apt-alley-street'].widthFeet,
+        alleyOv.heightFeet / baseMap['apt-alley-street'].heightFeet,
+        alleyOv.depthFeet / baseMap['apt-alley-street'].depthFeet
+      );
+      streetBackdrop.position.set(
+        13 + alleyOff[0],
+        10 + (alleyOv.elevationOffsetFeet - baseMap['apt-alley-street'].elevationOffsetFeet) + alleyOff[1],
+        -38 + alleyOff[2]
+      );
+      streetBackdrop.rotation.set(alleyRakeRad, alleySplayRad, 0);
+      streetBackdrop.material = getConfidenceMaterial(alleyOv.confidenceScore, buffBrickMat);
+
+      const jeffOv = ovMap['apt-jeffries'] || baseMap['apt-jeffries'];
+      jeffFloor.material = getConfidenceMaterial(jeffOv.confidenceScore, woodFloorMat);
 
       // Update selection outlines
       highlightBoxes.forEach((outline, id) => {
         const mat = outline.material as THREE.LineBasicMaterial;
-        mat.opacity = id === selectedAptIdRef.current ? 0.95 : wireframeRef.current ? 0.35 : 0.0;
+        mat.opacity =
+          id === selectedAptIdRef.current
+            ? 0.95
+            : wireframeRef.current || heatmapModeRef.current
+            ? 0.45
+            : 0.0;
       });
 
       // Decay flashbulb pulse if active
@@ -978,10 +1231,17 @@ export default function Stage18Viewport3D({
       const hits = _raycaster.intersectObjects(interactiveZoneMeshes, false);
       if (hits.length > 0) {
         const apt = hits[0].object.userData.apartment as Stage18ApartmentUnit;
-        setHoveredAptName(apt ? `${apt.designation} · ${apt.name}` : null);
+        const nextHover = apt ? `${apt.designation} · ${apt.name}` : null;
+        if (lastHoveredRef.current !== nextHover) {
+          lastHoveredRef.current = nextHover;
+          setHoveredAptName(nextHover);
+        }
         renderer.domElement.style.cursor = 'pointer';
       } else {
-        setHoveredAptName(null);
+        if (lastHoveredRef.current !== null) {
+          lastHoveredRef.current = null;
+          setHoveredAptName(null);
+        }
         renderer.domElement.style.cursor = 'grab';
       }
     };
@@ -991,7 +1251,7 @@ export default function Stage18Viewport3D({
     renderer.domElement.addEventListener('pointermove', onPointerMove);
 
     const onResize = () => {
-      if (!container) return;
+      if (!container || container.clientWidth === 0 || container.clientHeight === 0) return;
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(container.clientWidth, container.clientHeight);
@@ -1012,6 +1272,35 @@ export default function Stage18Viewport3D({
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
       controls.dispose();
+
+      // Dispose all GPU geometries, materials, and procedural textures to prevent VRAM leaks across tab switches
+      if (currentProjectedTex) {
+        currentProjectedTex.dispose();
+      }
+      [
+        redBrickTex,
+        buffBrickTex,
+        eastStuccoTex,
+        thorwaldWinTex,
+        torsoWinTex,
+        composerWinTex,
+        lonelyWinTex
+      ].forEach((t) => t.dispose());
+      [heatmapLowMat, heatmapMedMat, heatmapHighMat].forEach((m) => m.dispose());
+      if (scene.environment) {
+        scene.environment.dispose();
+      }
+      scene.traverse((obj) => {
+        if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
+          obj.geometry?.dispose();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m) => m.dispose());
+          } else if (obj.material) {
+            obj.material.dispose();
+          }
+        }
+      });
+
       renderer.dispose();
       if (renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement);
@@ -1022,6 +1311,9 @@ export default function Stage18Viewport3D({
   const matchingFramesForApt = curatedFrames.filter(
     (f) => f.targetApartmentId === selectedApartment.id
   );
+  const selectedAptOverride =
+    parametricOverrides[selectedApartment.id] ||
+    INITIAL_BUILDING_PARAMETRIC_OVERRIDES[selectedApartment.id];
 
   return (
     <div className="relative w-full h-[calc(100vh-65px)] overflow-hidden bg-[#0B0D11] select-none">
@@ -1049,7 +1341,7 @@ export default function Stage18Viewport3D({
       )}
 
       {/* Top-Left Minimal Spec & Optical Telemetry Strip */}
-      <div className="absolute top-4 left-6 z-20 flex flex-col gap-1 pointer-events-none">
+      <div className="absolute top-4 left-6 z-20 flex flex-col gap-2 pointer-events-none">
         <div className="bg-[#12161F]/95 border border-white/10 rounded-lg px-4 py-2.5 shadow-xl">
           <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
             <span className="text-amber-400 font-semibold">{activeCameraPreset.cameraBody}</span>
@@ -1072,10 +1364,63 @@ export default function Stage18Viewport3D({
             )}
           </div>
         </div>
+
+        {/* Confidence Heatmap Legend when active */}
+        {showConfidenceHeatmap && (
+          <div className="bg-[#12161F]/95 border border-amber-500/40 rounded-lg px-3.5 py-2 shadow-xl flex items-center gap-4 text-[11px] font-mono">
+            <span className="text-amber-300 font-semibold">3D CONFIDENCE HEATMAP:</span>
+            <span className="flex items-center gap-1.5 text-sky-300">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-sky-500" />
+              &lt;45% Baseline Prior
+            </span>
+            <span className="flex items-center gap-1.5 text-amber-300">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-500" />
+              45–79% Partial Scan
+            </span>
+            <span className="flex items-center gap-1.5 text-emerald-300">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500" />
+              ≥80% Multi-Frame Locked
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Top-Right Compact Apartment Spec Drawer Toggle */}
+      {/* Top-Right Compact Apartment Spec Drawer & Confidence Heatmap Toggle */}
       <div className="absolute top-4 right-6 z-20 flex items-center gap-2">
+        {liveProjectedTextureUrl && onClearLiveProjection && (
+          <button
+            onClick={onClearLiveProjection}
+            className="px-3 py-2 text-xs font-semibold rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
+          >
+            <Video className="w-3.5 h-3.5" />
+            Reset Live 4K Projection
+          </button>
+        )}
+        {onToggleConfidenceHeatmap && (
+          <button
+            onClick={onToggleConfidenceHeatmap}
+            className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              showConfidenceHeatmap
+                ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-semibold'
+                : 'bg-[#12161F]/95 text-slate-200 border-white/10 hover:border-white/25'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5" />
+            {showConfidenceHeatmap ? 'Heatmap: ON' : 'Confidence Heatmap'}
+          </button>
+        )}
+        <button
+          onClick={() => setShowPovSightlineFrustum((prev) => !prev)}
+          className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+            showPovSightlineFrustum
+              ? 'bg-sky-500 text-slate-950 border-sky-400 font-semibold'
+              : 'bg-[#12161F]/95 text-slate-200 border-white/10 hover:border-white/25'
+          }`}
+          title="Visualize L.B. Jefferies's Camera-POV Sightline Frustum & Non-Orthogonal Wall-Splay Wedges"
+        >
+          <Crosshair className="w-3.5 h-3.5" />
+          {showPovSightlineFrustum ? 'POV Frustum: ON' : 'POV Frustum Rays'}
+        </button>
         <button
           onClick={() => setShowWireframeGrid((prev) => !prev)}
           className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
@@ -1114,6 +1459,81 @@ export default function Stage18Viewport3D({
           </div>
 
           <div className="py-3 space-y-3 text-xs">
+            {/* Converged AI & CV Parametric Dimensions + POV Forced-Perspective Box */}
+            {selectedAptOverride && (
+              <div className="p-2.5 rounded-lg bg-[#0B0D11] border border-white/10 space-y-1.5 font-mono text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-amber-400 font-semibold">POV FORCED-PERSPECTIVE 3D</span>
+                  <span
+                    className={`font-bold tabular-nums ${
+                      selectedAptOverride.confidenceScore >= 80
+                        ? 'text-emerald-400'
+                        : selectedAptOverride.confidenceScore >= 45
+                        ? 'text-amber-400'
+                        : 'text-sky-400'
+                    }`}
+                  >
+                    {selectedAptOverride.confidenceScore}% Confidence
+                  </span>
+                </div>
+                <div className="text-slate-200 tabular-nums">
+                  Massing: {selectedAptOverride.widthFeet.toFixed(1)}&apos; W ×{' '}
+                  {selectedAptOverride.heightFeet.toFixed(1)}&apos; H ×{' '}
+                  {selectedAptOverride.depthFeet.toFixed(1)}&apos; D
+                </div>
+                <div className="text-slate-300 tabular-nums">
+                  Physical Room Depth:{' '}
+                  <span className="text-amber-300 font-semibold">
+                    {selectedAptOverride.interiorDepthFeet.toFixed(1)}&apos;
+                  </span>{' '}
+                  <span className="text-slate-400">
+                    (Apparent Arch:{' '}
+                    {(
+                      selectedAptOverride.apparentArchitecturalDepthFeet ??
+                      selectedAptOverride.interiorDepthFeet
+                    ).toFixed(1)}
+                    &apos;)
+                  </span>
+                </div>
+                <div className="text-sky-300 tabular-nums text-[10px]">
+                  POV Scale:{' '}
+                  {(selectedAptOverride.forcedPerspectiveScaleFactor ?? 0.85).toFixed(2)}× · Wall
+                  Splay:{' '}
+                  {(selectedAptOverride.cameraSightlineSplayDeg ?? 0) >= 0 ? '+' : ''}
+                  {(selectedAptOverride.cameraSightlineSplayDeg ?? 0).toFixed(1)}° · Floor Rake:{' '}
+                  {(selectedAptOverride.floorRakePitchDeg ?? 0) >= 0 ? '+' : ''}
+                  {(selectedAptOverride.floorRakePitchDeg ?? 0).toFixed(1)}°
+                </div>
+                <div className="text-slate-300 tabular-nums text-[10px]">
+                  Window Grid: {selectedAptOverride.windowCols}×{selectedAptOverride.windowRows} ·
+                  Reveal {selectedAptOverride.windowRevealInches.toFixed(1)}&quot;
+                </div>
+                {selectedAptOverride.placementOffsetFeet && (
+                  <div className="text-emerald-300 tabular-nums text-[10px]">
+                    Verified Offset: ΔX {selectedAptOverride.placementOffsetFeet[0].toFixed(1)}&apos; ·
+                    ΔY {selectedAptOverride.placementOffsetFeet[1].toFixed(1)}&apos; · ΔZ{' '}
+                    {selectedAptOverride.placementOffsetFeet[2].toFixed(1)}&apos;
+                  </div>
+                )}
+                {selectedAptOverride.orientationOverrideDeg && (
+                  <div className="text-amber-300 tabular-nums text-[10px]">
+                    Verified Camera: Pitch {selectedAptOverride.orientationOverrideDeg.pitchDeg}° ·
+                    Yaw {selectedAptOverride.orientationOverrideDeg.yawDeg}° · Roll{' '}
+                    {selectedAptOverride.orientationOverrideDeg.rollPlumbDeg}°
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[10px] text-slate-400">
+                  <span>SMPTE {selectedAptOverride.lastUpdatedSmpte}</span>
+                  <button
+                    onClick={() => onNavigateToTab('sourcelab')}
+                    className="text-amber-300 hover:underline"
+                  >
+                    Run Frame Solver →
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div>
               <div className="text-slate-400 mb-1">Dimensions & LOD Budget</div>
               <div className="text-slate-200 font-mono">{selectedApartment.dimensionsFeet}</div>

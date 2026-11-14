@@ -5,7 +5,29 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'silence-disabled-hmr-ws',
+        transform(code, id) {
+          if (id.includes('vite/dist/client/client.mjs')) {
+            return {
+              code: code
+                .replace(
+                  'reject(/* @__PURE__ */ new Error("WebSocket closed without opened."));',
+                  'resolve();'
+                )
+                .replace(
+                  'transport.connect(createHMRHandler(handleMessage));',
+                  'if (false) transport.connect(createHMRHandler(handleMessage));'
+                ),
+              map: null,
+            };
+          }
+        },
+      },
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

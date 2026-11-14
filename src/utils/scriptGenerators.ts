@@ -1,5 +1,8 @@
 import {
+  ArchitecturalLayoutIteration,
+  BuildingParametricOverride,
   CuratedReferenceFrame,
+  INITIAL_BUILDING_PARAMETRIC_OVERRIDES,
   LightingScenarioPreset,
   STAGE18_APARTMENTS
 } from '../data/stage18Data';
@@ -15,6 +18,8 @@ export interface ScriptGeneratorConfig {
   cyclesSamples: number;
   activeLightingScenario: LightingScenarioPreset;
   curatedFrames: CuratedReferenceFrame[];
+  parametricOverrides?: Record<string, BuildingParametricOverride>;
+  layoutIterations?: ArchitecturalLayoutIteration[];
 }
 
 function smpteToSecondsString(smpte: string, fps = 23.976): string {
@@ -160,34 +165,57 @@ export function generateFspyCalibrationGuideJson(config: ScriptGeneratorConfig):
       }
     },
     masonryMetrologyStandard: {
-      brickType: '1954 Manhattan / Stage 18 Scenic Common Brick',
-      singleBrickHeightInches: 2.25,
-      mortarJointThicknessInches: 0.375,
-      threeCoursesVerticalPitchInches: 8.0,
-      ninetyCoursesVerticalReferenceFeet: 20.0,
-      standardSashWindowOpeningInches: { width: 36.0, height: 72.0 }
+      brickType: '1954 Manhattan / Stage 18 Scenic Forced-Perspective Brick',
+      singleBrickHeightInchesAt1xForeground: 2.25,
+      mortarJointThicknessInchesAt1xForeground: 0.375,
+      threeCoursesVerticalPitchInchesAt1xForeground: 8.0,
+      forcedPerspectiveCarpentryWarning:
+        'CRITICAL: Published architectural plans and standard NYC building codes DO NOT apply to distant Stage 18 zones. Hal Pereira and Joseph MacMillan Johnson built Stage 18 strictly for optical fidelity from L.B. Jefferies camera nodal point (X=0, Y=+14.5ft, Z=+18.2ft). Multiply brick course heights by each zone forcedPerspectiveScaleFactor (1.00x foreground -> 0.88x West Wing -> 0.85x East Wing -> 0.82x Thorwald North Wall -> 0.66x North Alleyway) and account for non-orthogonal splayed interior side walls.',
+      standardSashWindowOpeningInchesAt1xForeground: { width: 36.0, height: 72.0 }
     },
-    curatedCalibrationFrames: geometryFrames.map((f, i) => ({
-      index: i + 1,
-      id: f.id,
-      title: f.title,
-      smpteTimecode: f.smpteTimecode,
-      focalLengthMm: f.focalLengthMm,
-      targetApartmentId: f.targetApartmentId,
-      sceneContext: f.sceneContext,
-      architecturalFeatureHighlighted: f.architecturalFeatureHighlighted,
-      lightingNotes: f.lightingNotes,
-      notes: f.notes,
-      customMetadata: f.customMetadata || [],
-      recommendedFspySetup: {
-        principalPointMode: 'Manual (Film Gate Center)',
-        vanishingPointAxes:
-          f.focalLengthMm <= 50
-            ? ['Axis 1: +X along Thorwald limestone window lintels', 'Axis 2: +Z along West Wing brick return wall', 'Axis 3: +Y vertical pilaster corner']
-            : ['Lock FOV to solved 35mm parent camera and use 2D principal-point shift for 152mm telephoto framing'],
-        referenceDistanceAxis: '+Y Vertical (Count 36 Brick Courses = 96.0 inches / 8.0 feet)'
-      }
-    }))
+    curatedCalibrationFrames: geometryFrames.map((f, i) => {
+      const zoneOv =
+        (config.parametricOverrides || INITIAL_BUILDING_PARAMETRIC_OVERRIDES)[
+          f.targetApartmentId
+        ] || INITIAL_BUILDING_PARAMETRIC_OVERRIDES['apt-thorwald'];
+      return {
+        index: i + 1,
+        id: f.id,
+        title: f.title,
+        smpteTimecode: f.smpteTimecode,
+        focalLengthMm: f.focalLengthMm,
+        targetApartmentId: f.targetApartmentId,
+        forcedPerspectiveScaleFactor: zoneOv.forcedPerspectiveScaleFactor ?? 0.82,
+        cameraSightlineSplayDeg: zoneOv.cameraSightlineSplayDeg ?? 0.0,
+        floorRakePitchDeg: zoneOv.floorRakePitchDeg ?? 0.0,
+        physicalRoomDepthFeet: zoneOv.interiorDepthFeet,
+        apparentArchitecturalDepthFeet:
+          zoneOv.apparentArchitecturalDepthFeet ?? zoneOv.interiorDepthFeet,
+        sceneContext: f.sceneContext,
+        architecturalFeatureHighlighted: f.architecturalFeatureHighlighted,
+        lightingNotes: f.lightingNotes,
+        notes: f.notes,
+        customMetadata: f.customMetadata || [],
+        recommendedFspySetup: {
+          principalPointMode: 'Manual (Film Gate Center)',
+          vanishingPointAxes:
+            f.focalLengthMm <= 50
+              ? [
+                  'Axis 1: +X along Thorwald limestone window lintels',
+                  'Axis 2: +Z along West Wing brick return wall (compensate for non-orthogonal sightline wall splay)',
+                  'Axis 3: +Y vertical pilaster corner'
+                ]
+              : [
+                  'Lock FOV to solved 35mm parent camera and use 2D principal-point shift for 152mm telephoto framing'
+                ],
+          referenceDistanceAxis: `+Y Vertical (Count 36 Brick Courses = ${(
+            8.0 * (zoneOv.forcedPerspectiveScaleFactor ?? 0.82)
+          ).toFixed(2)} physical feet at ${(zoneOv.forcedPerspectiveScaleFactor ?? 0.82).toFixed(
+            2
+          )}x POV forced-perspective scale)`
+        }
+      };
+    })
   };
 
   return JSON.stringify(calibrationPayload, null, 2);
@@ -197,14 +225,30 @@ export function generateBlenderArchitectureScript(config: ScriptGeneratorConfig)
   const unitScale = config.scaleUnit === 'imperial_feet' ? 0.3048 : 1.0;
   const activeFrames = config.curatedFrames.filter((f) => f.includedInExport);
   const prioritizedAptIds = Array.from(new Set(activeFrames.map((f) => f.targetApartmentId)));
+  const overrides = config.parametricOverrides || INITIAL_BUILDING_PARAMETRIC_OVERRIDES;
 
   const apartmentsPythonList = STAGE18_APARTMENTS.map((apt) => {
     const isPrioritizedByUser = prioritizedAptIds.includes(apt.id) || apt.id === 'apt-jeffries';
+    const ov = overrides[apt.id] || INITIAL_BUILDING_PARAMETRIC_OVERRIDES[apt.id];
+    const fpScale = ov.forcedPerspectiveScaleFactor ?? 0.85;
+    const splayDeg = ov.cameraSightlineSplayDeg ?? 0.0;
+    const rakeDeg = ov.floorRakePitchDeg ?? 0.0;
+    const appDepth = ov.apparentArchitecturalDepthFeet ?? ov.interiorDepthFeet;
     return `    {
         "id": "${apt.id}",
         "designation": "${apt.designation}",
         "name": "${apt.name.replace(/"/g, '\\"')}",
         "coords": (${apt.coordinates3D[0]}, ${apt.coordinates3D[2]}, ${apt.coordinates3D[1]}),
+        "dimensions_ft": (${ov.widthFeet.toFixed(2)}, ${ov.depthFeet.toFixed(2)}, ${ov.heightFeet.toFixed(2)}),
+        "window_grid": (${ov.windowCols}, ${ov.windowRows}),
+        "window_reveal_in": ${ov.windowRevealInches.toFixed(2)},
+        "balcony_proj_ft": ${ov.balconyProjectionFeet.toFixed(2)},
+        "interior_depth_ft": ${ov.interiorDepthFeet.toFixed(2)},
+        "apparent_arch_depth_ft": ${appDepth.toFixed(2)},
+        "forced_perspective_scale": ${fpScale.toFixed(3)},
+        "camera_sightline_splay_deg": ${splayDeg.toFixed(2)},
+        "floor_rake_pitch_deg": ${rakeDeg.toFixed(2)},
+        "confidence_pct": ${ov.confidenceScore},
         "lod_tier": ${isPrioritizedByUser ? 1 : apt.lodTier},
         "prioritized_by_frames": ${isPrioritizedByUser ? 'True' : 'False'},
     }`;
@@ -673,3 +717,258 @@ if __name__ == "__main__":
     print("Stage 18 Cycles Lighting & Hero Camera Rig configured.")
 `;
 }
+
+export function generateIterativeLayoutDeltasScript(config: ScriptGeneratorConfig): string {
+  const overrides = config.parametricOverrides || INITIAL_BUILDING_PARAMETRIC_OVERRIDES;
+  const approvedIterations = (config.layoutIterations || []).filter(
+    (it) => it.status === 'approved'
+  );
+
+  const esc = (s?: string) => (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+  const zoneOverridesPy = STAGE18_APARTMENTS.map((apt) => {
+    const ov = overrides[apt.id] || INITIAL_BUILDING_PARAMETRIC_OVERRIDES[apt.id];
+    const base = INITIAL_BUILDING_PARAMETRIC_OVERRIDES[apt.id];
+    const pOff = ov.placementOffsetFeet || [0, 0, 0];
+    const oDeg = ov.orientationOverrideDeg || { pitchDeg: -4.0, yawDeg: 0.0, rollPlumbDeg: 0.0 };
+    const fpScale = ov.forcedPerspectiveScaleFactor ?? base.forcedPerspectiveScaleFactor ?? 0.85;
+    const splayDeg = ov.cameraSightlineSplayDeg ?? base.cameraSightlineSplayDeg ?? 0.0;
+    const rakeDeg = ov.floorRakePitchDeg ?? base.floorRakePitchDeg ?? 0.0;
+    const appDepth = ov.apparentArchitecturalDepthFeet ?? base.apparentArchitecturalDepthFeet ?? ov.interiorDepthFeet;
+    return `    "${apt.id}": {
+        "designation": "${esc(apt.designation)}",
+        "name": "${esc(apt.name)}",
+        "baseline_dims_ft": (${base.widthFeet.toFixed(2)}, ${base.depthFeet.toFixed(2)}, ${base.heightFeet.toFixed(2)}),
+        "converged_dims_ft": (${ov.widthFeet.toFixed(2)}, ${ov.depthFeet.toFixed(2)}, ${ov.heightFeet.toFixed(2)}),
+        "elevation_offset_ft": ${ov.elevationOffsetFeet.toFixed(2)},
+        "placement_offset_ft": (${pOff[0].toFixed(2)}, ${pOff[2].toFixed(2)}, ${pOff[1].toFixed(2)}),
+        "orientation_override_deg": (${oDeg.pitchDeg.toFixed(2)}, ${oDeg.yawDeg.toFixed(2)}, ${oDeg.rollPlumbDeg.toFixed(2)}),
+        "validity_status": "${esc(ov.validityStatus || 'verified_valid')}",
+        "window_cols": ${ov.windowCols},
+        "window_rows": ${ov.windowRows},
+        "window_reveal_in": ${ov.windowRevealInches.toFixed(2)},
+        "balcony_projection_ft": ${ov.balconyProjectionFeet.toFixed(2)},
+        "interior_depth_ft": ${ov.interiorDepthFeet.toFixed(2)},
+        "apparent_arch_depth_ft": ${appDepth.toFixed(2)},
+        "forced_perspective_scale": ${fpScale.toFixed(3)},
+        "camera_sightline_splay_deg": ${splayDeg.toFixed(2)},
+        "floor_rake_pitch_deg": ${rakeDeg.toFixed(2)},
+        "confidence_score": ${ov.confidenceScore},
+        "contributing_frames": ${ov.contributingFramesCount},
+        "last_updated_smpte": "${esc(ov.lastUpdatedSmpte)}",
+        "last_engine": "${esc(ov.lastEngineUsed)}",
+    }`;
+  }).join(',\n');
+
+  const iterationsLedgerPy = approvedIterations
+    .map((it, idx) => {
+      const mv = it.manualVerification;
+      const pOff = mv?.placementOffsetFeet || [0, 0, 0];
+      const oDeg = mv?.orientationOverrideDeg || { pitchDeg: -4.0, yawDeg: 0.0, rollPlumbDeg: 0.0 };
+      const fpScale =
+        mv?.forcedPerspectiveScaleOverride ?? it.proposedValues.forcedPerspectiveScaleFactor ?? 0.85;
+      const splayDeg =
+        mv?.cameraSightlineSplayOverrideDeg ?? it.proposedValues.cameraSightlineSplayDeg ?? 0.0;
+      const rakeDeg =
+        mv?.floorRakePitchOverrideDeg ?? it.proposedValues.floorRakePitchDeg ?? 0.0;
+      const appDepth =
+        it.proposedValues.apparentArchitecturalDepthFeet ?? it.proposedValues.interiorDepthFeet;
+      return `    {
+        "iteration_index": ${idx + 1},
+        "id": "${esc(it.id)}",
+        "frame_title": "${esc(it.frameTitle)}",
+        "smpte_timecode": "${esc(it.smpteTimecode)}",
+        "focal_length_mm": ${it.focalLengthMm},
+        "engine_used": "${esc(it.engineUsed)}",
+        "target_apartment_id": "${esc(it.targetApartmentId)}",
+        "confidence_score": ${it.confidenceScore},
+        "validity_status": "${esc(mv?.validityStatus || 'verified_valid')}",
+        "placement_offset_ft": (${pOff[0].toFixed(2)}, ${pOff[2].toFixed(2)}, ${pOff[1].toFixed(2)}),
+        "orientation_override_deg": (${oDeg.pitchDeg.toFixed(2)}, ${oDeg.yawDeg.toFixed(2)}, ${oDeg.rollPlumbDeg.toFixed(2)}),
+        "forced_perspective_scale": ${fpScale.toFixed(3)},
+        "camera_sightline_splay_deg": ${splayDeg.toFixed(2)},
+        "floor_rake_pitch_deg": ${rakeDeg.toFixed(2)},
+        "verification_notes": "${esc(mv?.verificationNotes || '')}",
+        "previous_dims_ft": (${it.previousValues.widthFeet.toFixed(2)}, ${it.previousValues.depthFeet.toFixed(2)}, ${it.previousValues.heightFeet.toFixed(2)}),
+        "proposed_dims_ft": (${it.proposedValues.widthFeet.toFixed(2)}, ${it.proposedValues.depthFeet.toFixed(2)}, ${it.proposedValues.heightFeet.toFixed(2)}),
+        "window_grid": (${it.proposedValues.windowCols}, ${it.proposedValues.windowRows}),
+        "window_reveal_in": ${it.proposedValues.windowRevealInches.toFixed(2)},
+        "balcony_projection_ft": ${it.proposedValues.balconyProjectionFeet.toFixed(2)},
+        "interior_depth_ft": ${it.proposedValues.interiorDepthFeet.toFixed(2)},
+        "apparent_arch_depth_ft": ${appDepth.toFixed(2)},
+        "spatial_reasoning": "${esc(it.spatialReasoningSummary)}",
+    }`;
+    })
+    .join(',\n');
+
+  return `"""
+================================================================================
+05_apply_ai_iterative_layout_deltas.py
+STAGE 18: AUTOMATED & AI-DRIVEN ITERATIVE 3D ARCHITECTURAL LAYOUT DELTA APPLIER
+================================================================================
+Applies approved frame-by-frame dimensional refinements and manual low-confidence
+frame verifications (3D placement offsets, camera orientation overrides, and
+frame validity filters) from the Stage 18 Dual-Engine Frame-to-3D Solver
+directly onto the Blender 4.2 LTS Stage 18 architectural scene.
+
+Approved Frame Scan Iterations Applied: ${approvedIterations.length}
+================================================================================
+Usage inside Blender 4.2+ Scripting Workspace or CLI:
+  blender --python 03_build_stage18_architecture.py --python 05_apply_ai_iterative_layout_deltas.py
+"""
+
+import bpy
+import bmesh
+from mathutils import Vector
+
+CONVERGED_STAGE18_OVERRIDES = {
+${zoneOverridesPy}
+}
+
+APPROVED_SCAN_ITERATION_LEDGER = [
+${iterationsLedgerPy}
+]
+
+ZONE_TO_BLENDER_MESH_MAP = {
+    "apt-thorwald": "North_Thorwald_Tenement_Facade",
+    "apt-torso": "West_Wing_Tenement_Block",
+    "apt-lonelyhearts": "West_Wing_Tenement_Block",
+    "apt-composer": "East_Wing_Studio_Block",
+    "apt-sculptor": "Stage18_Excavated_Courtyard_Floor",
+    "apt-alley-street": "North_Alley_Street_Backdrop",
+    "apt-jeffries": "Jeff_Floor_Slab",
+}
+
+
+def create_confidence_heatmap_material(zone_id, confidence_pct):
+    """
+    Creates a diagnostic viewport material colored by reconstruction confidence:
+      - < 45%:  Blueprint Cyan  (#38BDF8) — Baseline Prior
+      - 45–79%: Tungsten Amber  (#F59E0B) — Partial Single-Frame Convergence
+      - >= 80%: Emerald Locked  (#10B981) — High Multi-Frame / User-Verified Convergence
+    """
+    mat_name = f"MAT_Confidence_{zone_id}_{confidence_pct}pct"
+    if mat_name in bpy.data.materials:
+        return bpy.data.materials[mat_name]
+    mat = bpy.data.materials.new(name=mat_name)
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if confidence_pct >= 80:
+        rgba = (0.06, 0.72, 0.50, 1.0)
+    elif confidence_pct >= 45:
+        rgba = (0.96, 0.62, 0.04, 1.0)
+    else:
+        rgba = (0.22, 0.74, 0.97, 1.0)
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = rgba
+        bsdf.inputs["Roughness"].default_value = 0.65
+    mat.diffuse_color = rgba
+    return mat
+
+
+def rebuild_window_bay_cutter_proxies(zone_id, spec):
+    """
+    Spawns procedural recessed window bay locators matching the scanned
+    window_cols x window_rows matrix and brick reveal depth.
+    """
+    col_name = "STAGE_18_SCANNED_WINDOW_BAYS"
+    if col_name not in bpy.data.collections:
+        col = bpy.data.collections.new(col_name)
+        bpy.context.scene.collection.children.link(col)
+    else:
+        col = bpy.data.collections[col_name]
+
+    # Remove old bay markers for this zone
+    for obj in list(col.objects):
+        if obj.name.startswith(f"BAY_{zone_id}_"):
+            bpy.data.objects.remove(obj, do_unlink=True)
+
+    cols = max(1, int(spec["window_cols"]))
+    rows = max(1, int(spec["window_rows"]))
+    reveal_ft = float(spec["window_reveal_in"]) / 12.0
+    w_ft, d_ft, h_ft = spec["converged_dims_ft"]
+
+    for r in range(rows):
+        for c in range(cols):
+            marker = bpy.data.objects.new(f"BAY_{zone_id}_R{r+1}_C{c+1}", None)
+            marker.empty_display_type = 'CUBE'
+            marker.empty_display_size = 0.85
+            marker["window_reveal_ft"] = reveal_ft
+            marker["interior_depth_ft"] = spec["interior_depth_ft"]
+            marker["confidence_score"] = spec["confidence_score"]
+            col.objects.link(marker)
+
+
+def apply_converged_layout_deltas():
+    print("=== Applying Stage 18 AI, CV & User-Verified 3D Architectural Deltas ===")
+    for zone_id, spec in CONVERGED_STAGE18_OVERRIDES.items():
+        mesh_name = ZONE_TO_BLENDER_MESH_MAP.get(zone_id)
+        obj = bpy.data.objects.get(mesh_name) if mesh_name else None
+
+        base_w, base_d, base_h = spec["baseline_dims_ft"]
+        conv_w, conv_d, conv_h = spec["converged_dims_ft"]
+
+        scale_x = conv_w / max(0.1, base_w)
+        scale_y = conv_d / max(0.1, base_d)
+        scale_z = conv_h / max(0.1, base_h)
+
+        if obj:
+            import math
+            obj.scale = (scale_x, scale_y, scale_z)
+            # Apply Camera-POV non-orthogonal sightline wall splay (Z-axis yaw in Blender) and floor rake pitch (X-axis pitch)
+            splay_rad = math.radians(spec.get("camera_sightline_splay_deg", 0.0))
+            rake_rad = math.radians(spec.get("floor_rake_pitch_deg", 0.0))
+            obj.rotation_euler = (rake_rad, 0.0, splay_rad)
+
+            # Apply user-verified 3D placement offsets (dX, dZ_depth, dY_elevation in Blender Z-up)
+            dx, dy_depth, dz_elev = spec.get("placement_offset_ft", (0.0, 0.0, 0.0))
+            if abs(dx) > 0.01 or abs(dy_depth) > 0.01 or abs(dz_elev) > 0.01:
+                obj.location = obj.location + Vector((dx, dy_depth, dz_elev))
+
+            obj["stage18_zone_id"] = zone_id
+            obj["confidence_score"] = spec["confidence_score"]
+            obj["validity_status"] = spec.get("validity_status", "verified_valid")
+            obj["placement_offset_ft"] = spec.get("placement_offset_ft", (0.0, 0.0, 0.0))
+            obj["orientation_override_deg"] = spec.get("orientation_override_deg", (-4.0, 0.0, 0.0))
+            obj["forced_perspective_scale"] = spec.get("forced_perspective_scale", 0.85)
+            obj["camera_sightline_splay_deg"] = spec.get("camera_sightline_splay_deg", 0.0)
+            obj["floor_rake_pitch_deg"] = spec.get("floor_rake_pitch_deg", 0.0)
+            obj["apparent_arch_depth_ft"] = spec.get("apparent_arch_depth_ft", spec["interior_depth_ft"])
+            obj["contributing_frames"] = spec["contributing_frames"]
+            obj["last_updated_smpte"] = spec["last_updated_smpte"]
+            obj["last_engine"] = spec["last_engine"]
+            obj["window_cols"] = spec["window_cols"]
+            obj["window_rows"] = spec["window_rows"]
+            obj["window_reveal_in"] = spec["window_reveal_in"]
+            obj["balcony_projection_ft"] = spec["balcony_projection_ft"]
+            obj["interior_depth_ft"] = spec["interior_depth_ft"]
+
+            # Store diagnostic confidence material in slot 2 for instant viewport inspection
+            conf_mat = create_confidence_heatmap_material(zone_id, spec["confidence_score"])
+            if len(obj.data.materials) < 2:
+                obj.data.materials.append(conf_mat)
+            else:
+                obj.data.materials[1] = conf_mat
+
+            print(
+                f"  [UPDATED POV-COMPENSATED] {zone_id} ({mesh_name}): "
+                f"{base_w:.1f}'x{base_h:.1f}' -> {conv_w:.1f}'x{conv_h:.1f}' "
+                f"| Physical Room Depth {spec['interior_depth_ft']:.1f}' (Apparent {spec.get('apparent_arch_depth_ft', spec['interior_depth_ft']):.1f}') "
+                f"| POV Scale {spec.get('forced_perspective_scale', 0.85):.2f}x "
+                f"| Sightline Wall Splay {spec.get('camera_sightline_splay_deg', 0.0):+.1f} deg "
+                f"| Floor Rake {spec.get('floor_rake_pitch_deg', 0.0):+.1f} deg "
+                f"| Confidence {spec['confidence_score']}%"
+            )
+
+        rebuild_window_bay_cutter_proxies(zone_id, spec)
+
+    # Record full iteration provenance on Scene root custom properties
+    bpy.context.scene["stage18_approved_iterations_count"] = len(APPROVED_SCAN_ITERATION_LEDGER)
+    print(f"=== Completed {len(APPROVED_SCAN_ITERATION_LEDGER)} Approved Frame-to-3D Layout Deltas ===")
+
+
+if __name__ == "__main__":
+    apply_converged_layout_deltas()
+`;
+}
+

@@ -20,7 +20,9 @@ interface ActionPlanAndBarriersProps {
   mode: 'plan' | 'barriers';
   completedTaskIds: string[];
   onToggleTask: (taskId: string) => void;
-  onJumpToScriptTab: (scriptTab: 'ffmpeg' | 'fspy' | 'architecture' | 'lighting') => void;
+  onJumpToScriptTab: (
+    scriptTab: 'ffmpeg' | 'fspy' | 'architecture' | 'lighting' | 'deltas'
+  ) => void;
   onSwitchMode: (mode: 'plan' | 'barriers') => void;
 }
 

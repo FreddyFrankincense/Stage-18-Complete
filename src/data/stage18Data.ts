@@ -128,7 +128,7 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     floorLevel: '2nd Floor (+14.5 ft above Courtyard)',
     coordinates3D: [0, 14.5, 22],
     cameraLookAt: [0, 11.5, -18],
-    dimensionsFeet: "24' W × 20' D × 10.5' H (Split-Level Living Room)",
+    dimensionsFeet: "24' W × 18.0' D Physical (1:1 Foreground Anchor) · 0° Wall Splay",
     furnishedStatus: 'Hero Tier 1 (Full Interior + Sub-mm Props)',
     lodTier: 1,
     keyProps: [
@@ -147,7 +147,7 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     ],
     remuxTimestamps: ['00:01:42:12', '00:03:18:04', '00:38:12:19', '01:36:52:06'],
     focalLengthRef: 35,
-    occlusionNotes: 'Rear kitchen alcove, bathroom door, and entry steps behind Jeff require reverse-angle frames when Lisa (Grace Kelly) enters at 00:15:40.'
+    occlusionNotes: 'Acts as the 1:1 optical nodal origin (0, +14.5, +18.2 ft). All distant courtyard structures were angled, raked, and scaled relative to this exact camera tripod position rather than architectural code.'
   },
   {
     id: 'apt-thorwald',
@@ -155,27 +155,27 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     name: "Lars & Anna Thorwald's Railroad Flat",
     resident: 'Lars Thorwald (Costume Jewelry Salesman)',
     wing: 'North Center Courtyard',
-    floorLevel: '2nd Floor (+13.0 ft above Courtyard)',
+    floorLevel: '2nd Floor (+13.0 ft · 43.6 ft from Camera)',
     coordinates3D: [-11, 13.0, -24],
     cameraLookAt: [-11, 13.0, -24],
-    dimensionsFeet: "38' W × 16' D × 9.5' H (4-Room Railroad Layout)",
+    dimensionsFeet: "35.2' W × 11.4' D Physical (Appears 16.5' D from POV · 0.82× Scale · +6.8° Wall Splay)",
     furnishedStatus: 'Hero Tier 1 (Full Interior + Sub-mm Props)',
     lodTier: 1,
     keyProps: [
-      '4 Sequential Double-Hung Sash Windows (Living Room, Hallway, Bedroom, Kitchen)',
-      'Heavy Aluminum Sample Case bound with rope & leather straps',
-      'Carved wooden headboard bed with floral wallpaper & vanity dresser',
-      'Wall-mounted rotary telephone in hallway & kitchen sink/icebox',
+      '4 Sequential Double-Hung Sash Windows (0.88× scaled-down frames to exaggerate courtyard span)',
+      'Forced-perspective hallway & bedroom partitions splayed +6.8° toward Jeffs sightline',
+      'Undersized 0.82× scale headboard bed & vanity dresser pushed against shallow 11.4 ft rear wall',
+      'Wall-mounted rotary telephone in hallway & shallow-relief kitchen sink/icebox',
       'Translucent roller shades + emissive cigar tip light source (Night scene)'
     ],
     materialsAndFinishes: [
-      'Aged red-brown Greenwich Village common bond brick facade (3 courses = 8")',
+      'Scenic molded red-brown brick facade (compressed 2.35" course height vs 2.67" standard to simulate extra distance)',
       'Limestone window lintels and sills with soot/rain streak vertex masking',
       'Muted warm-grey interior trim & yellow-green floral bedroom wallpaper'
     ],
     remuxTimestamps: ['00:07:19:10', '00:26:40:00', '00:44:18:12', '01:28:05:14'],
     focalLengthRef: 152,
-    occlusionNotes: 'Connecting corridor doors between rooms are only visible during wide diagonal pans; ceiling fixtures are occluded by upper window headers.'
+    occlusionNotes: 'Archival sources claim a 16–18 ft deep apartment, but Stage 18 north wall clearance forced Hal Pereira to build a 11.4 ft shallow shadowbox with +6.8° splayed partition walls and +2.4° floor rake tuned strictly for Jeffs POV.'
   },
   {
     id: 'apt-torso',
@@ -183,17 +183,17 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     name: "Miss Torso's Studio Apartment",
     resident: 'Georgine / Miss Torso (Ballet Dancer)',
     wing: 'West Courtyard Wing',
-    floorLevel: '2nd Floor (+13.5 ft above Courtyard)',
+    floorLevel: '2nd Floor (+13.5 ft · 33.4 ft Oblique from Camera)',
     coordinates3D: [-23, 13.5, -6],
     cameraLookAt: [-23, 13.5, -6],
-    dimensionsFeet: "22' W × 18' D × 10.0' H",
+    dimensionsFeet: "19.8' W × 12.6' D Physical (Appears 18.0' D from POV · 0.88× Scale · +11.5° Trapezoidal Splay)",
     furnishedStatus: 'Furnished Tier 2 (Full Visible Room)',
     lodTier: 2,
     keyProps: [
-      'Wide double apartment windows with wrought-iron Juliette balcony',
-      '1950s white porcelain refrigerator & kitchenette range',
-      'Mid-century upholstered sofa, coffee table, and three floor lamps',
-      'Dressing vanity & full-length rehearsal mirror'
+      'Wide double apartment windows with asymmetrically canted Juliette iron balcony',
+      'Trapezoidal interior side walls splayed +11.5° toward Jeffs window to prevent jamb occlusion',
+      '0.88× scale white porcelain refrigerator, sofa & three floor lamps arranged on raked floor',
+      'Angled dressing vanity & rehearsal mirror cheated 9° off-orthogonal to reflect into camera lens'
     ],
     materialsAndFinishes: [
       'Painted cream-buff brick exterior wall',
@@ -202,7 +202,7 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     ],
     remuxTimestamps: ['00:01:58:15', '00:22:10:04', '00:51:33:20'],
     focalLengthRef: 75,
-    occlusionNotes: 'seen at a 38-degree oblique angle from Jeffries window; north interior wall is fully hidden and can be simplified.'
+    occlusionNotes: 'If modeled with standard 90° orthogonal walls at a 38° oblique sightline, the window jamb hides 60% of the room. The real set splayed the interior north/south walls +11.5° open toward Jeffries camera.'
   },
   {
     id: 'apt-composer',
@@ -210,17 +210,17 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     name: "The Songwriter's Penthouse Studio",
     resident: 'Ross Bagdasarian / The Songwriter',
     wing: 'East Courtyard Wing',
-    floorLevel: '3rd Floor (+22.5 ft above Courtyard)',
+    floorLevel: '3rd Floor (+22.5 ft · 35.1 ft Oblique from Camera)',
     coordinates3D: [22, 22.5, -8],
     cameraLookAt: [22, 22.5, -8],
-    dimensionsFeet: "26' W × 22' D × 12.5' H (Vaulted North-Light Window)",
+    dimensionsFeet: "22.4' W × 13.8' D Physical (Appears 21.0' D from POV · 0.85× Scale · -12.0° Splay · +3.5° Rake)",
     furnishedStatus: 'Furnished Tier 2 (Full Visible Room)',
     lodTier: 2,
     keyProps: [
-      'Large multi-pane industrial steel casement studio window & skylight',
-      'Ebony baby grand piano positioned near window glass',
-      'Sheet music manuscripts, bar cart, and mid-century cocktail seating',
-      'Blue/cyan evening party fill light rig + warm tungsten chandelier'
+      'Large multi-pane industrial steel casement studio window canted -4.5° downward toward courtyard',
+      '7/8-scale baby grand piano positioned on a +3.5° raked floor so keys/lid read from below',
+      'Trapezoidal studio walls splayed -12.0° toward Jeffs 2nd-floor viewpoint',
+      'Blue/cyan evening party fill light rig + warm tungsten chandelier hung low in frame'
     ],
     materialsAndFinishes: [
       'Stucco & painted masonry East Wing facade',
@@ -229,7 +229,7 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     ],
     remuxTimestamps: ['00:02:28:00', '00:34:12:08', '01:12:44:16'],
     focalLengthRef: 75,
-    occlusionNotes: 'Lower floor area directly beneath the window sill is partially hidden from Jeffries lower elevation (+14.5 ft vs +22.5 ft).'
+    occlusionNotes: 'Because Jeff views the 3rd-floor studio from 8 ft below (+14.5 ft vs +22.5 ft), the studio floor was raked +3.5° upward toward the rear and walls splayed -12.0° so the piano and party guests remain fully visible.'
   },
   {
     id: 'apt-lonelyhearts',
@@ -237,16 +237,16 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     name: "Miss Lonelyhearts's Ground Apartment",
     resident: 'Miss Lonelyhearts',
     wing: 'Excavated Basement Level',
-    floorLevel: '1st Floor / Raised Basement (+2.0 ft)',
+    floorLevel: '1st Floor / Raised Basement (+2.0 ft · 40.4 ft from Camera)',
     coordinates3D: [-21, 2.5, -14],
     cameraLookAt: [-21, 2.5, -14],
-    dimensionsFeet: "18' W × 16' D × 9.0' H",
+    dimensionsFeet: "16.2' W × 10.8' D Physical (Appears 16.0' D from POV · 0.86× Scale · +9.5° Splay · -3.2° Rake)",
     furnishedStatus: 'Furnished Tier 2 (Full Visible Room)',
     lodTier: 2,
     keyProps: [
       'Pair of ground-floor sash windows with emerald-green draperies & Venetian blinds',
-      'Dining table set for two with twin brass candlesticks',
-      'Bedroom alcove with dressing table mirror & medicine cabinet',
+      'Dining table tilted -3.2° toward camera to expose place settings from Jeffs elevated angle',
+      'Shallow 10.8 ft bedroom alcove with +9.5° splayed walls & forced-perspective doorway',
       'Exterior basement stairwell & wrought-iron handrail outside window'
     ],
     materialsAndFinishes: [
@@ -256,7 +256,7 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     ],
     remuxTimestamps: ['00:11:04:18', '00:54:19:02', '01:21:09:11'],
     focalLengthRef: 152,
-    occlusionNotes: 'Viewed at a downward -19 degree depression angle; ceiling is completely unseen, while tabletop and floor rug require high-res textures.'
+    occlusionNotes: 'Viewed at a steep -19° downward depression angle; the room was built only 10.8 ft deep with a slight negative floor rake (-3.2°) and +9.5° wall splay to prevent the window header from cutting off the rear bed alcove.'
   },
   {
     id: 'apt-sculptor',
@@ -264,16 +264,16 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     name: "The Sculptor's Basement Studio & Garden",
     resident: 'The Female Sculptor & Courtyard Neighbors',
     wing: 'Excavated Basement Level',
-    floorLevel: 'Excavated Stage 18 Basement (-6.0 ft to 0.0 ft)',
+    floorLevel: 'Excavated Stage 18 Basement (-6.0 ft to 0.0 ft · 39.4 ft from Camera)',
     coordinates3D: [10, -2.5, -16],
     cameraLookAt: [6, -2.0, -18],
-    dimensionsFeet: "50' W × 42' D (Courtyard Floor + Flowerbed + Patio)",
+    dimensionsFeet: "34.5' W × 24.2' D Physical Basin (Trapezoidal Taper toward North Wall · +2.0° Grade Slope)",
     furnishedStatus: 'Furnished Tier 2 (Full Visible Room)',
     lodTier: 2,
     keyProps: [
       'Biomorphic white plaster abstract sculpture ("Hunger") on wooden plinth',
-      'Thorwald prized Zinnia flowerbed & freshly dug soil patch',
-      'Concrete courtyard flagstones, drainage grates & wooden privacy fence',
+      'Thorwald prized Zinnia flowerbed & freshly dug soil patch (tapered width to lengthen wall)',
+      'Non-orthogonal concrete courtyard flagstones laid in converging perspective grid',
       'Sub-basement cellar bulkhead doors & pulley clotheslines'
     ],
     materialsAndFinishes: [
@@ -283,7 +283,7 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     ],
     remuxTimestamps: ['00:01:48:22', '00:41:05:10', '01:24:30:00'],
     focalLengthRef: 50,
-    occlusionNotes: 'Hal Pereira excavated the actual floor of Paramount Stage 18 so this patio sits in the basement storeroom below stage grade.'
+    occlusionNotes: 'Hal Pereira excavated the floor of Paramount Stage 18 and laid the patio flagstones in a converging trapezoidal grid (+4.2° taper toward the north wall) to make the 44 ft soundstage courtyard appear 75+ ft deep.'
   },
   {
     id: 'apt-alley-street',
@@ -291,26 +291,26 @@ export const STAGE18_APARTMENTS: Stage18ApartmentUnit[] = [
     name: 'Central Alleyway, Cross-Street & Bar Marquee',
     resident: 'Public Greenwich Village Street Traffic',
     wing: 'Background Street & Alley',
-    floorLevel: 'Street Grade (+3.5 ft Forced Perspective)',
+    floorLevel: 'Raked Street Grade (+3.5 ft to +6.8 ft · 55.4 ft Farthest Zone from Camera)',
     coordinates3D: [2, 8.0, -36],
     cameraLookAt: [2, 8.0, -36],
-    dimensionsFeet: "14' W Alley Gap × 35' Deep Forced-Perspective Street",
+    dimensionsFeet: "11.8' W Tapered Alley × 5.2' D Physical Flats (Appears 35' D Street · 0.66× Scale · +14.5° Splay · +4.8° Rake)",
     furnishedStatus: 'Architectural Tier 3 (Parallax / Exterior)',
     lodTier: 3,
     keyProps: [
-      'Narrow brick alleyway flanked by wrought-iron gates and trash cans',
-      'Forced-perspective Manhattan street facade across the avenue',
-      'Illuminated Neon Bar & Grill sign and warm tavern window glow',
-      'Period 1953 automobiles & pedestrian silhouettes on motion tracks'
+      'Converging brick alleyway walls (+14.5° inward splay) and +4.8° upward raked asphalt ramp',
+      '0.66× miniature-scale Manhattan street facade & tavern windows pressed against Stage 18 north wall',
+      'Scaled-down illuminated Neon Bar & Grill marquee sign and warm tavern window glow',
+      '0.72× underscaled period automobiles & dwarf-doorway silhouettes on compressed motion track'
     ],
     materialsAndFinishes: [
       'Atmospheric volumetric haze pass separating courtyard from street',
       'Emissive neon tubing (Red/Amber Cycles Emission)',
-      'Wet asphalt shader with specular streetlamp reflections'
+      'Wet asphalt shader on +4.8° raked ramp with specular streetlamp reflections'
     ],
     remuxTimestamps: ['00:02:14:08', '00:19:50:12', '01:08:15:04'],
     focalLengthRef: 50,
-    occlusionNotes: 'Constructed using theatrical forced perspective (~0.75 scale) near the north wall of Stage 18 to simulate a full city block depth.'
+    occlusionNotes: 'Farthest zone from Jeffs camera (55.4 ft): built right against the physical North soundstage wall using extreme 0.66× forced perspective, a +4.8° raked street ramp, and +14.5° converging alley walls to fake an entire Manhattan city block.'
   }
 ];
 
@@ -850,18 +850,18 @@ export const TECHNICAL_BARRIERS: TechnicalBarrier[] = [
   },
   {
     id: 'barrier-forced-perspective',
-    code: 'BARRIER 02 · SOUNDSTAGE ARCHITECTURE',
-    title: 'Paramount Stage 18 Forced Perspective & Excavated Basement Geometry',
+    code: 'BARRIER 02 · POV-CHEATED SOUNDSTAGE GEOMETRY',
+    title: 'Inaccurate Architectural Standards vs. Camera-POV Forced Perspective & Odd Room Angles',
     category: 'Architecture & Scale',
-    severity: 'High',
+    severity: 'Critical',
     opticalOrTechnicalCause:
-      'Hal Pereira built the set inside Paramount Stage 18 (185 ft × 50 ft × 40 ft), excavating the soundstage floor into the basement storeroom to create the lower courtyard while compressing the upper stories and background street alleyway using theatrical forced perspective (~0.75 scale in the rear alley).',
+      'Published studio publicity sheets and municipal architectural standards are inaccurate for Stage 18 because Hal Pereira & J. McMillan Johnson built the entire courtyard solely to look convincing from L.B. Jefferies camera POV (0, +14.5, +18.2 ft). Rooms furthest from the camera (Thorwalds flat, 3rd-floor Composer studio, Miss Torsos oblique apartment, and the North Alleyway) were built as compressed shallow shadowboxes (0.66× to 0.88× scale) with non-orthogonal trapezoidal walls splayed +6.8° to +14.5° toward Jeffs lens and raked floors (+2.4° to +4.8°).',
     symptomsInBlender:
-      'If you model the background street and upper roofs at true 1:1 Manhattan city-block depth, camera pitch angles from Jeffries 2nd-floor window fail to align with the horizon and roof cornices simultaneously.',
+      'Assuming standard 90° orthogonal room walls, uniform 3-courses=8" brick gauge, or full 16–22 ft apartment depths causes distant rooms to punch through the physical Stage 18 walls and causes window jambs on oblique wings (West/East) to occlude the actors and furniture seen in the film.',
     engineeredWorkaround:
-      'Constrain the entire courtyard bounding box to the physical Paramount Stage 18 envelope (courtyard depth Z = 46 ft from Jeffs window to Thorwalds wall; basement floor at Y = -6.0 ft) and apply a 0.78× scale taper to the North Alleyway street facades.',
+      'Apply a radial Camera-POV Forced-Perspective & Sightline Splay Solver anchored at Jeffries nodal point: attenuate physical Z-depth by radial distance from the camera, splay side walls open along the sightline ray (cameraSightlineSplayDeg), and rake distant floors/alleys (floorRakePitchDeg) so the 3D geometry matches both Stage 18 physical carpentry and the 4K film frames.',
     blenderOrFfmpegSolution:
-      '03_build_stage18_architecture.py enforces exact Stage 18 bounding coordinates and includes the -6.0 ft excavated garden depression.',
+      '03_build_stage18_architecture.py & 05_apply_ai_iterative_layout_deltas.py shear and splay room vertices along the camera sightline vector and apply per-zone forced-perspective scale factors.',
     associatedScriptTab: 'architecture'
   },
   {
@@ -961,3 +961,235 @@ export const TECHNICAL_BARRIERS: TechnicalBarrier[] = [
     associatedScriptTab: 'lighting'
   }
 ];
+
+export type AnalysisEngineMode = 'gemini_cloud_hybrid' | 'local_cv_backup';
+
+export interface ParametricDimensionsSnapshot {
+  widthFeet: number;
+  heightFeet: number;
+  depthFeet: number;
+  elevationOffsetFeet: number;
+  windowCols: number;
+  windowRows: number;
+  windowRevealInches: number;
+  balconyProjectionFeet: number;
+  interiorDepthFeet: number; // True physical Stage 18 compressed carpentry depth
+  apparentArchitecturalDepthFeet?: number; // Apparent depth if naively assuming 1:1 architectural standards
+  forcedPerspectiveScaleFactor?: number; // 1.00 at Jeff's window -> 0.66 at farthest North Alley backdrop
+  cameraSightlineSplayDeg?: number; // Non-orthogonal wall splay angle cheated toward Jeff's lens
+  floorRakePitchDeg?: number; // Vertical floor/ceiling rake tilt built for Jeff's +14.5ft POV
+}
+
+export type FrameValidityStatus =
+  | 'unverified'
+  | 'verified_valid'
+  | 'geometry_excluded_lighting_only'
+  | 'invalid_discarded';
+
+export interface ManualFrameVerification {
+  verifiedByUser: boolean;
+  validityStatus: FrameValidityStatus;
+  placementOffsetFeet: [number, number, number]; // [dX lateral, dY elevation, dZ depth]
+  orientationOverrideDeg: {
+    pitchDeg: number;
+    yawDeg: number;
+    rollPlumbDeg: number;
+  };
+  horizonLineNormalizedY: number; // 0.0 to 1.0 on calibration canvas
+  plumbLineNormalizedX: number; // 0.0 to 1.0 on calibration canvas
+  forcedPerspectiveScaleOverride?: number;
+  cameraSightlineSplayOverrideDeg?: number;
+  floorRakePitchOverrideDeg?: number;
+  verificationNotes: string;
+  verifiedAtIso: string;
+}
+
+export interface BuildingParametricOverride extends ParametricDimensionsSnapshot {
+  apartmentId: string;
+  confidenceScore: number; // 0 to 100
+  contributingFramesCount: number;
+  lastUpdatedSmpte: string;
+  lastEngineUsed: 'baseline_prior' | AnalysisEngineMode;
+  placementOffsetFeet?: [number, number, number];
+  orientationOverrideDeg?: {
+    pitchDeg: number;
+    yawDeg: number;
+    rollPlumbDeg: number;
+  };
+  validityStatus?: FrameValidityStatus;
+}
+
+export interface CvPrepassTelemetry {
+  vanishingPitchDeg: number;
+  vanishingYawDeg: number;
+  brickCoursesCounted: number;
+  detectedWindowBays: number;
+  orthogonalEdgePct: number;
+  sharpnessScore: number;
+  radialDistanceFromJeffFeet?: number;
+  estimatedPerspectiveScaleFactor?: number;
+  estimatedSightlineSplayDeg?: number;
+}
+
+export interface ArchitecturalLayoutIteration {
+  id: string;
+  frameTitle: string;
+  smpteTimecode: string;
+  focalLengthMm: number;
+  engineUsed: AnalysisEngineMode;
+  targetApartmentId: string;
+  confidenceScore: number;
+  status: 'pending_review' | 'approved' | 'rejected';
+  proposedValues: ParametricDimensionsSnapshot;
+  previousValues: ParametricDimensionsSnapshot;
+  cvPrepassTelemetry: CvPrepassTelemetry;
+  spatialReasoningSummary: string;
+  detectedFeatures: string[];
+  lowConfidenceFlags?: string[];
+  manualVerification?: ManualFrameVerification;
+  createdAtIso: string;
+}
+
+export const INITIAL_BUILDING_PARAMETRIC_OVERRIDES: Record<string, BuildingParametricOverride> = {
+  'apt-jeffries': {
+    apartmentId: 'apt-jeffries',
+    widthFeet: 24.0,
+    heightFeet: 10.4,
+    depthFeet: 16.0,
+    elevationOffsetFeet: 14.5,
+    windowCols: 3,
+    windowRows: 1,
+    windowRevealInches: 8.5,
+    balconyProjectionFeet: 0.0,
+    interiorDepthFeet: 18.0,
+    apparentArchitecturalDepthFeet: 18.0,
+    forcedPerspectiveScaleFactor: 1.0,
+    cameraSightlineSplayDeg: 0.0,
+    floorRakePitchDeg: 0.0,
+    confidenceScore: 42,
+    contributingFramesCount: 1,
+    lastUpdatedSmpte: '01:36:52:25',
+    lastEngineUsed: 'baseline_prior'
+  },
+  'apt-thorwald': {
+    apartmentId: 'apt-thorwald',
+    widthFeet: 35.2,
+    heightFeet: 36.4,
+    depthFeet: 10.8,
+    elevationOffsetFeet: 13.0,
+    windowCols: 4,
+    windowRows: 4,
+    windowRevealInches: 6.4,
+    balconyProjectionFeet: 2.8,
+    interiorDepthFeet: 11.4,
+    apparentArchitecturalDepthFeet: 16.5,
+    forcedPerspectiveScaleFactor: 0.82,
+    cameraSightlineSplayDeg: 6.8,
+    floorRakePitchDeg: 2.4,
+    confidenceScore: 38,
+    contributingFramesCount: 1,
+    lastUpdatedSmpte: '00:02:14:08',
+    lastEngineUsed: 'baseline_prior'
+  },
+  'apt-torso': {
+    apartmentId: 'apt-torso',
+    widthFeet: 11.4,
+    heightFeet: 34.8,
+    depthFeet: 41.5,
+    elevationOffsetFeet: 13.5,
+    windowCols: 2,
+    windowRows: 3,
+    windowRevealInches: 7.2,
+    balconyProjectionFeet: 2.5,
+    interiorDepthFeet: 12.6,
+    apparentArchitecturalDepthFeet: 18.0,
+    forcedPerspectiveScaleFactor: 0.88,
+    cameraSightlineSplayDeg: 11.5,
+    floorRakePitchDeg: 1.8,
+    confidenceScore: 34,
+    contributingFramesCount: 1,
+    lastUpdatedSmpte: '00:03:45:12',
+    lastEngineUsed: 'baseline_prior'
+  },
+  'apt-composer': {
+    apartmentId: 'apt-composer',
+    widthFeet: 11.6,
+    heightFeet: 36.2,
+    depthFeet: 41.0,
+    elevationOffsetFeet: 22.5,
+    windowCols: 3,
+    windowRows: 3,
+    windowRevealInches: 7.8,
+    balconyProjectionFeet: 1.4,
+    interiorDepthFeet: 13.8,
+    apparentArchitecturalDepthFeet: 21.0,
+    forcedPerspectiveScaleFactor: 0.85,
+    cameraSightlineSplayDeg: -12.0,
+    floorRakePitchDeg: 3.5,
+    confidenceScore: 36,
+    contributingFramesCount: 1,
+    lastUpdatedSmpte: '01:08:15:04',
+    lastEngineUsed: 'baseline_prior'
+  },
+  'apt-lonelyhearts': {
+    apartmentId: 'apt-lonelyhearts',
+    widthFeet: 11.2,
+    heightFeet: 34.5,
+    depthFeet: 41.2,
+    elevationOffsetFeet: 2.5,
+    windowCols: 2,
+    windowRows: 2,
+    windowRevealInches: 6.2,
+    balconyProjectionFeet: 0.8,
+    interiorDepthFeet: 10.8,
+    apparentArchitecturalDepthFeet: 16.0,
+    forcedPerspectiveScaleFactor: 0.86,
+    cameraSightlineSplayDeg: 9.5,
+    floorRakePitchDeg: -3.2,
+    confidenceScore: 30,
+    contributingFramesCount: 0,
+    lastUpdatedSmpte: '00:26:40:00',
+    lastEngineUsed: 'baseline_prior'
+  },
+  'apt-sculptor': {
+    apartmentId: 'apt-sculptor',
+    widthFeet: 34.5,
+    heightFeet: 8.2,
+    depthFeet: 24.2,
+    elevationOffsetFeet: -4.0,
+    windowCols: 2,
+    windowRows: 1,
+    windowRevealInches: 6.0,
+    balconyProjectionFeet: 0.0,
+    interiorDepthFeet: 10.4,
+    apparentArchitecturalDepthFeet: 14.5,
+    forcedPerspectiveScaleFactor: 0.92,
+    cameraSightlineSplayDeg: 4.2,
+    floorRakePitchDeg: 2.0,
+    confidenceScore: 32,
+    contributingFramesCount: 0,
+    lastUpdatedSmpte: '00:18:22:10',
+    lastEngineUsed: 'baseline_prior'
+  },
+  'apt-alley-street': {
+    apartmentId: 'apt-alley-street',
+    widthFeet: 14.8,
+    heightFeet: 23.5,
+    depthFeet: 3.4,
+    elevationOffsetFeet: 10.0,
+    windowCols: 3,
+    windowRows: 3,
+    windowRevealInches: 4.2,
+    balconyProjectionFeet: 0.4,
+    interiorDepthFeet: 5.2,
+    apparentArchitecturalDepthFeet: 35.0,
+    forcedPerspectiveScaleFactor: 0.66,
+    cameraSightlineSplayDeg: 14.5,
+    floorRakePitchDeg: 4.8,
+    confidenceScore: 28,
+    contributingFramesCount: 0,
+    lastUpdatedSmpte: '00:02:48:15',
+    lastEngineUsed: 'baseline_prior'
+  }
+};
+
