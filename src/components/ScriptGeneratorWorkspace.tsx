@@ -3,9 +3,13 @@ import {
   ArchitecturalLayoutIteration,
   BuildingParametricOverride,
   CuratedReferenceFrame,
+  INITIAL_JEFFRIES_3D_ASSETS,
+  INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS,
+  JeffriesPbrMaterialSpec,
   LIGHTING_SCENARIOS,
   LightingScenarioPreset,
-  Stage18LearnedKnowledgeProfile
+  Stage18LearnedKnowledgeProfile,
+  generateBlenderJeffriesAssetLibraryPython
 } from '../data/stage18Data';
 import {
   generateBlenderArchitectureScript,
@@ -13,22 +17,29 @@ import {
   generateFfmpegExtractionScript,
   generateFspyCalibrationGuideJson,
   generateIterativeLayoutDeltasScript,
+  generateJeffriesPbrMaterialsBlenderScript,
   ScriptGeneratorConfig
 } from '../utils/scriptGenerators';
+import JeffriesPbrMaterialLab from './JeffriesPbrMaterialLab';
 import {
   Activity,
   Check,
-  CheckCircle2,
   Copy,
   Download,
   HardDrive,
-  Play,
   ShieldCheck,
   Sliders,
   Terminal
 } from 'lucide-react';
 
-export type ScriptTabId = 'ffmpeg' | 'fspy' | 'architecture' | 'lighting' | 'deltas';
+export type ScriptTabId =
+  | 'ffmpeg'
+  | 'fspy'
+  | 'architecture'
+  | 'lighting'
+  | 'deltas'
+  | 'pbr_materials'
+  | 'asset_library';
 
 interface SystemAuditReport {
   ranAtIso: string;
@@ -50,6 +61,8 @@ interface ScriptGeneratorWorkspaceProps {
   parametricOverrides?: Record<string, BuildingParametricOverride>;
   layoutIterations?: ArchitecturalLayoutIteration[];
   learnedKnowledgeProfile?: Stage18LearnedKnowledgeProfile;
+  jeffriesPbrMaterials?: JeffriesPbrMaterialSpec[];
+  onUpdateJeffriesPbrMaterials?: (updated: JeffriesPbrMaterialSpec[]) => void;
 }
 
 export default function ScriptGeneratorWorkspace({
@@ -59,7 +72,9 @@ export default function ScriptGeneratorWorkspace({
   initialScriptTab = 'ffmpeg',
   parametricOverrides,
   layoutIterations,
-  learnedKnowledgeProfile
+  learnedKnowledgeProfile,
+  jeffriesPbrMaterials = INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS,
+  onUpdateJeffriesPbrMaterials
 }: ScriptGeneratorWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<ScriptTabId>(initialScriptTab);
 
@@ -93,7 +108,8 @@ export default function ScriptGeneratorWorkspace({
       curatedFrames,
       parametricOverrides,
       layoutIterations,
-      learnedKnowledgeProfile
+      learnedKnowledgeProfile,
+      jeffriesPbrMaterials
     }),
     [
       mkvFilePath,
@@ -107,48 +123,85 @@ export default function ScriptGeneratorWorkspace({
       curatedFrames,
       parametricOverrides,
       layoutIterations,
-      learnedKnowledgeProfile
+      learnedKnowledgeProfile,
+      jeffriesPbrMaterials
     ]
   );
 
-  const scripts = useMemo(
+  const SCRIPT_META: Record<
+    ScriptTabId,
+    {
+      filename: string;
+      language: string;
+      title: string;
+      build: (cfg: ScriptGeneratorConfig) => string;
+    }
+  > = useMemo(
     () => ({
       ffmpeg: {
         filename: '01_extract_4k_remux_frames.sh',
         language: 'bash',
         title: '01. Lossless 4K MKV Keyframe & Median Clean-Plate Extractor (FFmpeg)',
-        content: generateFfmpegExtractionScript(config)
+        build: generateFfmpegExtractionScript
       },
       fspy: {
         filename: '02_fspy_optical_calibration_guide.json',
         language: 'json',
         title: '02. Mitchell BNC & Exakta VX Optical Calibration Spec (fSpy + Brick Metrology)',
-        content: generateFspyCalibrationGuideJson(config)
+        build: generateFspyCalibrationGuideJson
       },
       architecture: {
         filename: '03_build_stage18_architecture.py',
         language: 'python',
         title: '03. Paramount Stage 18 & Jeffries Apartment Procedural Builder (Blender bpy)',
-        content: generateBlenderArchitectureScript(config)
+        build: generateBlenderArchitectureScript
       },
       lighting: {
         filename: '04_setup_cycles_lighting_and_cameras.py',
         language: 'python',
         title: '04. Cycles Light Groups, AgX Color & Hero Camera Background Loader (Blender bpy)',
-        content: generateCyclesLightingAndCamerasScript(config)
+        build: generateCyclesLightingAndCamerasScript
       },
       deltas: {
-        filename: '05_apply_ai_iterative_layout_deltas.py',
+        filename: '05_apply_verified_3d_deltas.py',
         language: 'python',
         title:
-          '05. Dual-Engine AI & CV Iterative 3D Architectural Layout Delta Applier (Blender bpy)',
-        content: generateIterativeLayoutDeltasScript(config)
+          '05. Automated Computer-Vision Iterative 3D Architectural Layout Delta Applier (Blender bpy)',
+        build: generateIterativeLayoutDeltasScript
+      },
+      pbr_materials: {
+        filename: '06_jeffries_apartment_pbr_materials.py',
+        language: 'python',
+        title:
+          "06. L.B. Jefferies's Apartment (#2B) Film-Still Calibrated PBR Shaders (Blender 4.2+ Principled BSDF v2)",
+        build: generateJeffriesPbrMaterialsBlenderScript
+      },
+      asset_library: {
+        filename: '07_jeffries_set_dressing_asset_library.py',
+        language: 'python',
+        title:
+          "07. L.B. Jefferies's Apartment (#2B) 12-Piece 3D Set Dressing & Furniture Asset Library Builder (Blender 4.2+ bpy)",
+        build: (cfg) =>
+          generateBlenderJeffriesAssetLibraryPython(
+            INITIAL_JEFFRIES_3D_ASSETS,
+            cfg.jeffriesPbrMaterials || INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS,
+            cfg.scaleUnit
+          )
       }
     }),
-    [config]
+    []
   );
 
-  const currentScript = scripts[activeTab];
+  // Lazily compile ONLY the active script tab during render (avoids compiling 5 hidden scripts on every slider change)
+  const currentScript = useMemo(() => {
+    const meta = SCRIPT_META[activeTab];
+    return {
+      filename: meta.filename,
+      language: meta.language,
+      title: meta.title,
+      content: meta.build(config)
+    };
+  }, [SCRIPT_META, activeTab, config]);
 
   const runFullSystemEfficiencyAudit = async () => {
     setIsRunningAudit(true);
@@ -251,9 +304,9 @@ export default function ScriptGeneratorWorkspace({
   };
 
   const handleDownloadAllKit = () => {
-    Object.values(scripts).forEach((s, idx) => {
+    Object.values(SCRIPT_META).forEach((s, idx) => {
       window.setTimeout(() => {
-        handleDownloadSingle(s.filename, s.content);
+        handleDownloadSingle(s.filename, s.build(config));
       }, idx * 200);
     });
   };
@@ -276,12 +329,15 @@ export default function ScriptGeneratorWorkspace({
       parametricOverrides,
       layoutIterations,
       learnedKnowledgeProfile,
+      jeffriesPbrMaterials,
       compiledScripts: {
-        '01_extract_4k_remux_frames.sh': scripts.ffmpeg.content,
-        '02_fspy_optical_calibration_guide.json': scripts.fspy.content,
-        '03_build_stage18_architecture.py': scripts.architecture.content,
-        '04_setup_cycles_lighting_and_cameras.py': scripts.lighting.content,
-        '05_apply_ai_iterative_layout_deltas.py': scripts.deltas.content
+        '01_extract_4k_remux_frames.sh': SCRIPT_META.ffmpeg.build(config),
+        '02_fspy_optical_calibration_guide.json': SCRIPT_META.fspy.build(config),
+        '03_build_stage18_architecture.py': SCRIPT_META.architecture.build(config),
+        '04_setup_cycles_lighting_and_cameras.py': SCRIPT_META.lighting.build(config),
+        '05_apply_ai_iterative_layout_deltas.py': SCRIPT_META.deltas.build(config),
+        '06_jeffries_apartment_pbr_materials.py': SCRIPT_META.pbr_materials.build(config),
+        '07_jeffries_set_dressing_asset_library.py': SCRIPT_META.asset_library.build(config)
       }
     };
     const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
@@ -334,10 +390,19 @@ export default function ScriptGeneratorWorkspace({
             className="px-4 py-2.5 text-xs font-semibold bg-amber-500 text-slate-950 rounded-lg hover:bg-amber-400 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
           >
             <Download className="w-4 h-4" />
-            Download All 5 Pipeline Scripts
+            Download All 6 Pipeline Scripts
           </button>
         </div>
       </div>
+
+      {/* L.B. Jefferies's Apartment (#2B) Film-Still Calibrated PBR Texture & Material Studio */}
+      {onUpdateJeffriesPbrMaterials && (
+        <JeffriesPbrMaterialLab
+          materials={jeffriesPbrMaterials}
+          onUpdateMaterials={onUpdateJeffriesPbrMaterials}
+          onOpenBlenderPbrScript={() => setActiveTab('pbr_materials')}
+        />
+      )}
 
       {/* System Error & Efficiency Self-Check Panel for Local Testing */}
       <div className="bg-[#12161F] border border-emerald-500/30 rounded-xl p-5 space-y-4">
@@ -390,14 +455,12 @@ export default function ScriptGeneratorWorkspace({
             </div>
 
             <div className="p-3 rounded-lg bg-[#0B0D11] border border-white/10">
-              <div className="text-slate-400 text-[11px]">DUAL-ENGINE SERVER STATUS</div>
+              <div className="text-slate-400 text-[11px]">STANDALONE DESKTOP ENGINE</div>
               <div className="text-emerald-400 font-semibold mt-0.5 truncate">
                 {auditReport.serverHealthStatus}
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
-                {auditReport.geminiCloudConfigured
-                  ? 'Gemini 4 Hydrogen + Local CV Backup Active'
-                  : 'Local Browser CV Geometric Solver Active'}
+                Zero Paid API Keys · Bayesian + CV Solver Active
               </div>
             </div>
 
@@ -418,11 +481,11 @@ export default function ScriptGeneratorWorkspace({
           <div className="flex items-center gap-2 text-slate-300">
             <Terminal className="w-4 h-4 text-amber-400 shrink-0" />
             <span>
-              <strong className="text-white">Run Locally on Your Workstation:</strong> Clone/unzip
-              this project, run{' '}
+              <strong className="text-white">100% Standalone Windows Desktop Ready (No API Keys Needed):</strong>{' '}
+              Unzip project, run{' '}
               <code className="text-amber-300 font-mono">npm install &amp;&amp; npm run dev</code>{' '}
               (opens <code className="text-amber-300 font-mono">http://localhost:3000</code>), or
-              execute the 5 compiled scripts directly with FFmpeg and Blender 4.2 LTS:
+              execute the 6 compiled scripts directly with FFmpeg and Blender 4.2 LTS:
             </span>
           </div>
           <code className="px-2.5 py-1.5 rounded bg-[#12161F] border border-white/10 font-mono text-[11px] text-amber-300 whitespace-nowrap shrink-0">
@@ -570,7 +633,9 @@ export default function ScriptGeneratorWorkspace({
                   { id: 'fspy', label: '02_fspy_calibration.json' },
                   { id: 'architecture', label: '03_build_stage18_architecture.py' },
                   { id: 'lighting', label: '04_setup_cycles_lighting.py' },
-                  { id: 'deltas', label: '05_apply_ai_iterative_layout_deltas.py' }
+                  { id: 'deltas', label: '05_apply_ai_iterative_layout_deltas.py' },
+                  { id: 'pbr_materials', label: '06_jeffries_pbr_materials.py' },
+                  { id: 'asset_library', label: '07_jeffries_asset_library.py' }
                 ] as const
               ).map((tab) => (
                 <button

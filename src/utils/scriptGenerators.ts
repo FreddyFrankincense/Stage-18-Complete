@@ -3,7 +3,9 @@ import {
   BuildingParametricOverride,
   CuratedReferenceFrame,
   INITIAL_BUILDING_PARAMETRIC_OVERRIDES,
+  INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS,
   INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE,
+  JeffriesPbrMaterialSpec,
   LightingScenarioPreset,
   STAGE18_APARTMENTS,
   Stage18LearnedKnowledgeProfile
@@ -23,6 +25,7 @@ export interface ScriptGeneratorConfig {
   parametricOverrides?: Record<string, BuildingParametricOverride>;
   layoutIterations?: ArchitecturalLayoutIteration[];
   learnedKnowledgeProfile?: Stage18LearnedKnowledgeProfile;
+  jeffriesPbrMaterials?: JeffriesPbrMaterialSpec[];
 }
 
 function smpteToSecondsString(smpte: string, fps = 23.976): string {
@@ -445,35 +448,57 @@ def create_box(name, size, location, collection, material=None):
 def build_jeffries_foreground_apartment(root_col, mat_plaster, mat_wood, mat_glass):
     """
     Constructs L.B. Jefferies's 2nd-floor apartment interior (#2B) with the
-    signature three-window bay frame, window sill, wheelchair station, and
-    Exakta VX tripod mount at (X=0, Y=-22, Z=14.5) in Blender Z-up coordinates.
+    signature three-window bay frame, window sill, bamboo matchstick blinds,
+    convalescent wheelchair & daybed, orthopedic plaster cast, and Exakta VX
+    tripod mount at (X=0, Y=-22, Z=14.5) in Blender Z-up coordinates.
     """
     jeff_col = get_or_create_collection("APT_2B_Jeffries_Hero_Interior", root_col)
 
-    # Floor slab & recessed step-down living room floor
+    # 1. Quarter-Sawn Oak Herringbone Floor Slab, Step-Down Riser & Worktable Top
     create_box("Jeff_Floor_Slab", (24.0, 20.0, 0.8), (0.0, -28.0, 11.2), jeff_col, mat_wood)
+    create_box("Jeff_StepDown_Riser", (24.0, 4.5, 0.6), (0.0, -35.5, 11.8), jeff_col, mat_wood)
+    create_box("Jeff_Worktable_Top", (2.4, 1.8, 0.14), (-3.4, -19.5, 13.2), jeff_col, mat_wood)
+
+    # 2. Aged Sage-Cream Gypsum Plaster Walls & Ceiling
     create_box("Jeff_Ceiling_Slab", (24.0, 20.0, 0.8), (0.0, -28.0, 22.0), jeff_col, mat_plaster)
     create_box("Jeff_West_Wall", (0.8, 20.0, 10.8), (-12.0, -28.0, 16.6), jeff_col, mat_plaster)
     create_box("Jeff_East_Wall", (0.8, 20.0, 10.8), (12.0, -28.0, 16.6), jeff_col, mat_plaster)
     create_box("Jeff_Rear_Wall", (24.0, 0.8, 10.8), (0.0, -38.0, 16.6), jeff_col, mat_plaster)
-
-    # Three-Window Bay Frame facing the Courtyard (Y = -18.0)
-    create_box("Jeff_Bay_Sill_Ledge", (11.5, 1.4, 0.35), (0.0, -18.0, 12.8), jeff_col, mat_wood)
     create_box("Jeff_Bay_Header", (12.0, 1.2, 2.2), (0.0, -18.0, 20.8), jeff_col, mat_plaster)
     create_box("Jeff_Bay_Lower_Apron", (12.0, 1.0, 1.6), (0.0, -18.0, 12.0), jeff_col, mat_plaster)
 
-    # Window Mullions separating Center (4.2' W) and Flanking Sash Windows
+    # 3. Semigloss Cream Enamel over Moulded Pine Casements & Sill Ledge
+    create_box("Jeff_Bay_Sill_Ledge", (11.5, 1.4, 0.35), (0.0, -18.0, 12.8), jeff_col, mat_wood)
     for x_mullion in [-5.4, -2.1, 2.1, 5.4]:
         create_box(f"Jeff_Bay_Mullion_{x_mullion}", (0.38, 0.85, 6.8), (x_mullion, -18.0, 16.2), jeff_col, mat_wood)
 
-    # Upper & Lower Double-Hung Sash Bars (Center window raised open for Jeff's lens)
     create_box("Jeff_Center_Upper_Sash_Top", (4.0, 0.25, 0.25), (0.0, -17.9, 19.3), jeff_col, mat_wood)
     create_box("Jeff_Center_Meeting_Rail_Raised", (4.0, 0.28, 0.22), (0.0, -17.9, 16.8), jeff_col, mat_wood)
-    create_box("Jeff_Center_Upper_Glass", (3.9, 0.05, 2.4), (0.0, -17.9, 18.0), jeff_col, mat_glass)
 
-    # Tripod & Exakta VX Telephoto Proxy at Nodal Station
-    create_box("Jeff_Exakta_Tripod_Column", (0.35, 0.35, 4.2), (0.0, -19.2, 12.5), jeff_col, mat_wood)
-    create_box("Jeff_Exakta_Kilfitt_152mm_Barrel", (0.4, 1.6, 0.4), (0.0, -18.6, 14.6), jeff_col, mat_wood)
+    # 4. Cylinder-Drawn Optical Crown Window Glass Panes
+    create_box("Jeff_Center_Upper_Glass", (3.9, 0.05, 2.4), (0.0, -17.9, 18.0), jeff_col, mat_glass)
+    create_box("Jeff_Left_Flank_Lower_Glass", (3.0, 0.05, 6.2), (-3.75, -17.9, 16.1), jeff_col, mat_glass)
+    create_box("Jeff_Right_Flank_Lower_Glass", (3.0, 0.05, 6.2), (3.75, -17.9, 16.1), jeff_col, mat_glass)
+
+    # 5. Split-Bamboo Matchstick Roll-Up Window Shades
+    create_box("Jeff_Center_Bamboo_Blind_Roll", (4.0, 0.32, 0.32), (0.0, -18.25, 19.35), jeff_col, mat_wood)
+    create_box("Jeff_Left_Bamboo_Blind_Shade", (3.0, 0.08, 2.4), (-3.75, -18.25, 18.1), jeff_col, mat_wood)
+    create_box("Jeff_Right_Bamboo_Blind_Shade", (3.0, 0.08, 2.4), (3.75, -18.25, 18.1), jeff_col, mat_wood)
+
+    # 6. Everest & Jennings Convalescent Wheelchair & Oriental Daybed (Wool Bouclé Upholstery)
+    create_box("Jeff_Wheelchair_Seat_Cushion", (2.1, 2.2, 0.35), (0.0, -20.8, 12.9), jeff_col, mat_plaster)
+    create_box("Jeff_Wheelchair_Backrest", (2.1, 0.28, 2.4), (0.0, -21.8, 14.2), jeff_col, mat_plaster)
+    create_box("Jeff_Oriental_Daybed_Mattress", (6.5, 3.2, 0.85), (5.2, -23.5, 12.1), jeff_col, mat_plaster)
+
+    # 7. Calcified Plaster-of-Paris & Crinoline Gauze Orthopedic Left-Leg Cast
+    create_box("Jeff_Left_Leg_Plaster_Cast", (0.52, 2.6, 0.55), (-0.35, -19.4, 13.1), jeff_col, mat_plaster)
+
+    # 8. Ihagee Exakta VX 35mm SLR + Kilfitt 152mm Telephoto Barrel + Graflex Parabolic Flash Dish
+    create_box("Jeff_Tripod_Pan_Head", (0.35, 0.35, 4.2), (1.25, -19.2, 12.5), jeff_col, mat_wood)
+    create_box("Jeff_Exakta_Camera_Body", (0.52, 0.34, 0.36), (1.25, -19.0, 14.6), jeff_col, mat_wood)
+    create_box("Jeff_Exakta_Kilfitt_152mm_Barrel", (0.32, 1.55, 0.32), (1.25, -18.2, 14.6), jeff_col, mat_wood)
+    create_box("Jeff_Graflex_Parabolic_Flash_Dish", (0.65, 0.22, 0.65), (0.75, -18.8, 14.8), jeff_col, mat_wood)
+
 
 
 def build_stage18_courtyard():
@@ -1005,4 +1030,399 @@ if __name__ == "__main__":
     apply_converged_layout_deltas()
 `;
 }
+
+function hexToLinearRgbTuple(hex: string): string {
+  const clean = hex.replace('#', '');
+  const num = parseInt(clean.length === 3 ? clean.replace(/(.)/g, '$1$1') : clean, 16) || 0;
+  const srgbToLinear = (c: number) => {
+    const v = c / 255;
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  const r = srgbToLinear((num >> 16) & 255).toFixed(4);
+  const g = srgbToLinear((num >> 8) & 255).toFixed(4);
+  const b = srgbToLinear(num & 255).toFixed(4);
+  return `(${r}, ${g}, ${b}, 1.0)`;
+}
+
+export function generateJeffriesPbrMaterialsBlenderScript(
+  config: ScriptGeneratorConfig
+): string {
+  const materials = config.jeffriesPbrMaterials || INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS;
+  const esc = (s?: string) => (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+  const materialsDictPy = materials
+    .map((m) => {
+      const sp = m.surfaceProperties;
+      const meshesPy = m.targetBlenderMeshes.map((mesh) => `"${esc(mesh)}"`).join(', ');
+      return `    "${esc(m.id)}": {
+        "mat_name": "${esc(m.blenderMaterialName)}",
+        "label": "${esc(m.name)}",
+        "category": "${esc(m.category)}",
+        "pattern_type": "${esc(m.patternType)}",
+        "smpte_ref": "${esc(m.filmStillRef.smpteTimecode)}",
+        "focal_mm": ${m.filmStillRef.focalLengthMm},
+        "scene_title": "${esc(m.filmStillRef.sceneTitle)}",
+        "optical_notes": "${esc(m.filmStillRef.opticalObservation)}",
+        "target_meshes": [${meshesPy}],
+        "base_rgba": ${hexToLinearRgbTuple(sp.baseColorHex)},
+        "secondary_rgba": ${hexToLinearRgbTuple(sp.secondaryColorHex)},
+        "accent_rgba": ${hexToLinearRgbTuple(sp.accentColorHex)},
+        "roughness": ${sp.roughness.toFixed(3)},
+        "roughness_variance": ${sp.roughnessVariance.toFixed(3)},
+        "metalness": ${sp.metalness.toFixed(3)},
+        "ior": ${sp.ior.toFixed(3)},
+        "specular_weight": ${sp.specularWeight.toFixed(3)},
+        "coat_weight": ${sp.clearcoatWeight.toFixed(3)},
+        "coat_roughness": ${sp.clearcoatRoughness.toFixed(3)},
+        "sheen_weight": ${sp.sheenWeight.toFixed(3)},
+        "sheen_roughness": ${sp.sheenRoughness.toFixed(3)},
+        "transmission_weight": ${sp.transmissionWeight.toFixed(3)},
+        "anisotropic_weight": ${sp.anisotropicWeight.toFixed(3)},
+        "anisotropic_rotation": ${sp.anisotropicRotation.toFixed(3)},
+        "subsurface_weight": ${sp.subsurfaceWeight.toFixed(3)},
+        "subsurface_radius_mm": (${sp.subsurfaceRadiusMm[0].toFixed(2)}, ${sp.subsurfaceRadiusMm[1].toFixed(2)}, ${sp.subsurfaceRadiusMm[2].toFixed(2)}),
+        "bump_height_mm": ${sp.bumpHeightMm.toFixed(3)},
+        "normal_strength": ${sp.normalStrength.toFixed(3)},
+        "uv_scale": ${sp.uvScale.toFixed(2)},
+        "edge_wear": ${sp.edgeWearFactor.toFixed(3)},
+    }`;
+    })
+    .join(',\n');
+
+  return `"""
+================================================================================
+06_jeffries_apartment_pbr_materials.py
+STAGE 18: L.B. JEFFERIES'S APARTMENT (#2B) — FILM-STILL CALIBRATED PBR SHADER SUITE
+================================================================================
+Constructs 8 physically based, Blender 4.2+ LTS Principled BSDF v2 procedural
+materials derived from 1954 Rear Window 4K UHD Remux reference frames:
+  1. MAT_Jeff_Oak_Herringbone_Parquet      (Wood — Quarter-Sawn Red Oak Floor)
+  2. MAT_Jeff_Cream_Enamel_Pine_Mullions   (Wood — Semigloss Cream Window Sash/Sill)
+  3. MAT_Jeff_Aged_Sage_Gypsum_Plaster     (Plaster — Hand-Troweled Interior Walls)
+  4. MAT_Jeff_Cylinder_Crown_Window_Glass  (Glass — Light-Path Caustics Bypass)
+  5. MAT_Jeff_Split_Bamboo_Matchstick_Blinds (Wood/Fiber — Anisotropic + Backlit Translucent)
+  6. MAT_Jeff_Oatmeal_Wool_Boucle_Upholstery (Fabric — Microfiber Sheen Wheelchair/Daybed)
+  7. MAT_Jeff_Exakta_Chrome_And_Vulcanite  (Metal — Anisotropic Chrome + Diamond Vulcanite)
+  8. MAT_Jeff_Orthopedic_Plaster_Cast      (Plaster/Gauze — Random-Walk SSS + Bandage Relief)
+
+Optimized for Cycles GPU + AgX Color Management:
+  - Uses Blender 4.x Principled BSDF v2 socket names (Coat Weight, Sheen Weight,
+    Transmission Weight, Subsurface Weight, Specular IOR Level) with automatic
+    fallback for Blender 3.6 LTS.
+  - Automatically assigns each material to its target meshes in collection
+    'APT_2B_Jeffries_Hero_Interior' created by 03_build_stage18_architecture.py.
+================================================================================
+Usage inside Blender 4.2+ Scripting Workspace or CLI:
+  blender --python 03_build_stage18_architecture.py --python 06_jeffries_apartment_pbr_materials.py
+"""
+
+import bpy
+
+JEFFRIES_PBR_MATERIAL_SPECS = {
+${materialsDictPy}
+}
+
+
+def set_bsdf_input(bsdf, names, value):
+    """Safely sets a Principled BSDF socket across Blender 4.x (v2) and 3.6."""
+    if isinstance(names, str):
+        names = [names]
+    for name in names:
+        if name in bsdf.inputs:
+            bsdf.inputs[name].default_value = value
+            return True
+    return False
+
+
+def build_principled_pbr_material(spec_id, spec):
+    mat_name = spec["mat_name"]
+    if mat_name in bpy.data.materials:
+        mat = bpy.data.materials[mat_name]
+    else:
+        mat = bpy.data.materials.new(name=mat_name)
+
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+
+    # Store 1954 4K Remux provenance as custom properties on the Blender Material
+    mat["stage18_spec_id"] = spec_id
+    mat["smpte_reference"] = spec["smpte_ref"]
+    mat["focal_length_mm"] = spec["focal_mm"]
+    mat["scene_title"] = spec["scene_title"]
+    mat["optical_notes"] = spec["optical_notes"]
+    mat["bump_height_mm"] = spec["bump_height_mm"]
+
+    out = nodes.new("ShaderNodeOutputMaterial")
+    out.location = (720, 0)
+
+    bsdf = nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.location = (280, 0)
+
+    # Configure base Principled BSDF v2 surface properties
+    set_bsdf_input(bsdf, ["Base Color"], spec["base_rgba"])
+    set_bsdf_input(bsdf, ["Roughness"], spec["roughness"])
+    set_bsdf_input(bsdf, ["Metallic"], spec["metalness"])
+    set_bsdf_input(bsdf, ["IOR"], spec["ior"])
+    set_bsdf_input(bsdf, ["Specular IOR Level", "Specular"], spec["specular_weight"])
+    set_bsdf_input(bsdf, ["Coat Weight", "Clearcoat"], spec["coat_weight"])
+    set_bsdf_input(bsdf, ["Coat Roughness", "Clearcoat Roughness"], spec["coat_roughness"])
+    set_bsdf_input(bsdf, ["Sheen Weight", "Sheen"], spec["sheen_weight"])
+    set_bsdf_input(bsdf, ["Sheen Roughness"], spec["sheen_roughness"])
+    set_bsdf_input(bsdf, ["Transmission Weight", "Transmission"], spec["transmission_weight"])
+    set_bsdf_input(bsdf, ["Anisotropic"], spec["anisotropic_weight"])
+    set_bsdf_input(bsdf, ["Anisotropic Rotation"], spec["anisotropic_rotation"])
+    set_bsdf_input(bsdf, ["Subsurface Weight", "Subsurface"], spec["subsurface_weight"])
+
+    tex_coord = nodes.new("ShaderNodeTexCoord")
+    tex_coord.location = (-980, 0)
+
+    mapping = nodes.new("ShaderNodeMapping")
+    mapping.location = (-760, 0)
+    scale = spec["uv_scale"]
+    mapping.inputs["Scale"].default_value = (scale, scale, scale)
+    links.new(tex_coord.outputs["Object"], mapping.inputs["Vector"])
+
+    bump = nodes.new("ShaderNodeBump")
+    bump.location = (20, -260)
+    bump.inputs["Strength"].default_value = min(1.0, spec["normal_strength"])
+    # Convert mm bump depth to meters (Blender internal displacement distance)
+    bump.inputs["Distance"].default_value = spec["bump_height_mm"] * 0.001
+
+    pattern = spec["pattern_type"]
+
+    if pattern == "oak_parquet":
+        # Herringbone Oak Parquet + Quarter-Sawn Medullary Wave + Scuff Roughness
+        brick = nodes.new("ShaderNodeTexBrick")
+        brick.location = (-480, 220)
+        brick.offset = 0.5
+        brick.inputs["Color1"].default_value = spec["base_rgba"]
+        brick.inputs["Color2"].default_value = spec["secondary_rgba"]
+        brick.inputs["Mortar"].default_value = (0.08, 0.05, 0.03, 1.0)
+        brick.inputs["Scale"].default_value = 3.5
+        brick.inputs["Mortar Size"].default_value = 0.015
+        brick.inputs["Brick Width"].default_value = 0.45
+        brick.inputs["Row Height"].default_value = 0.15
+
+        wave = nodes.new("ShaderNodeTexWave")
+        wave.location = (-480, -60)
+        wave.wave_type = 'BANDS'
+        wave.inputs["Scale"].default_value = 14.0
+        wave.inputs["Distortion"].default_value = 4.5
+        wave.inputs["Detail"].default_value = 6.0
+
+        mix_col = nodes.new("ShaderNodeMixRGB")
+        mix_col.location = (-160, 180)
+        mix_col.blend_type = 'OVERLAY'
+        mix_col.inputs["Fac"].default_value = 0.28
+
+        rough_ramp = nodes.new("ShaderNodeMapRange")
+        rough_ramp.location = (-160, -40)
+        rough_ramp.inputs["To Min"].default_value = max(0.05, spec["roughness"] - spec["roughness_variance"])
+        rough_ramp.inputs["To Max"].default_value = min(0.95, spec["roughness"] + spec["roughness_variance"])
+
+        links.new(mapping.outputs["Vector"], brick.inputs["Vector"])
+        links.new(mapping.outputs["Vector"], wave.inputs["Vector"])
+        links.new(brick.outputs["Color"], mix_col.inputs["Color1"])
+        links.new(wave.outputs["Color"], mix_col.inputs["Color2"])
+        links.new(mix_col.outputs["Color"], bsdf.inputs["Base Color"])
+        links.new(wave.outputs["Fac"], rough_ramp.inputs["Value"])
+        links.new(rough_ramp.outputs["Result"], bsdf.inputs["Roughness"])
+        links.new(brick.outputs["Fac"], bump.inputs["Height"])
+        links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+    elif pattern == "painted_mullion":
+        # Semigloss Cream Enamel over Moulded Pine with Bevel & AO Sill Edge Chipping
+        ao = nodes.new("ShaderNodeAmbientOcclusion")
+        ao.location = (-480, 220)
+        ao.samples = 4
+        ao.inputs["Distance"].default_value = 0.12
+        ao.inputs["Color"].default_value = spec["base_rgba"]
+
+        brush_noise = nodes.new("ShaderNodeTexNoise")
+        brush_noise.location = (-480, -60)
+        brush_noise.inputs["Scale"].default_value = 28.0
+        brush_noise.inputs["Detail"].default_value = 6.0
+
+        bevel = nodes.new("ShaderNodeBevel")
+        bevel.location = (-220, -280)
+        bevel.samples = 4
+        bevel.inputs["Radius"].default_value = 0.0025
+
+        links.new(mapping.outputs["Vector"], brush_noise.inputs["Vector"])
+        links.new(ao.outputs["Color"], bsdf.inputs["Base Color"])
+        links.new(brush_noise.outputs["Fac"], bump.inputs["Height"])
+        links.new(bevel.outputs["Normal"], bump.inputs["Normal"])
+        links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+    elif pattern == "sage_plaster":
+        # Dual-Frequency Troweled Gypsum Plaster + Voronoi Hairline Cracks
+        macro_noise = nodes.new("ShaderNodeTexNoise")
+        macro_noise.location = (-500, 180)
+        macro_noise.inputs["Scale"].default_value = 2.2
+        macro_noise.inputs["Detail"].default_value = 4.0
+
+        stipple_noise = nodes.new("ShaderNodeTexNoise")
+        stipple_noise.location = (-500, -80)
+        stipple_noise.inputs["Scale"].default_value = 85.0
+        stipple_noise.inputs["Detail"].default_value = 8.0
+        stipple_noise.inputs["Roughness"].default_value = 0.75
+
+        mix_plaster = nodes.new("ShaderNodeMixRGB")
+        mix_plaster.location = (-180, 160)
+        mix_plaster.inputs["Color1"].default_value = spec["base_rgba"]
+        mix_plaster.inputs["Color2"].default_value = spec["secondary_rgba"]
+
+        links.new(mapping.outputs["Vector"], macro_noise.inputs["Vector"])
+        links.new(mapping.outputs["Vector"], stipple_noise.inputs["Vector"])
+        links.new(macro_noise.outputs["Fac"], mix_plaster.inputs["Fac"])
+        links.new(mix_plaster.outputs["Color"], bsdf.inputs["Base Color"])
+        links.new(stipple_noise.outputs["Fac"], bump.inputs["Height"])
+        links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+    elif pattern == "crown_glass":
+        # Cylinder-Drawn Sheet Glass + Cycles Light-Path Shadow/Diffuse Caustics Bypass
+        wave_noise = nodes.new("ShaderNodeTexNoise")
+        wave_noise.location = (-460, -180)
+        wave_noise.inputs["Scale"].default_value = 1.6
+        wave_noise.inputs["Detail"].default_value = 2.0
+
+        links.new(mapping.outputs["Vector"], wave_noise.inputs["Vector"])
+        links.new(wave_noise.outputs["Fac"], bump.inputs["Height"])
+        links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+        light_path = nodes.new("ShaderNodeLightPath")
+        light_path.location = (60, 320)
+        math_max = nodes.new("ShaderNodeMath")
+        math_max.location = (280, 280)
+        math_max.operation = 'MAXIMUM'
+        transp = nodes.new("ShaderNodeBsdfTransparent")
+        transp.location = (280, 140)
+        transp.inputs["Color"].default_value = spec["base_rgba"]
+
+        mix_shader = nodes.new("ShaderNodeMixShader")
+        mix_shader.location = (520, 80)
+
+        links.new(light_path.outputs["Is Shadow Ray"], math_max.inputs[0])
+        links.new(light_path.outputs["Is Diffuse Ray"], math_max.inputs[1])
+        links.new(math_max.outputs["Value"], mix_shader.inputs["Fac"])
+        links.new(bsdf.outputs["BSDF"], mix_shader.inputs[1])
+        links.new(transp.outputs["BSDF"], mix_shader.inputs[2])
+        links.new(mix_shader.outputs["Shader"], out.inputs["Surface"])
+        return mat
+
+    elif pattern == "bamboo_blinds":
+        # Horizontal Split-Bamboo Reeds + Backlit Translucent BSDF Mix
+        reed_wave = nodes.new("ShaderNodeTexWave")
+        reed_wave.location = (-480, 140)
+        reed_wave.wave_type = 'BANDS'
+        reed_wave.bands_direction = 'Z'
+        reed_wave.inputs["Scale"].default_value = 22.0
+        reed_wave.inputs["Distortion"].default_value = 0.8
+
+        mix_reed = nodes.new("ShaderNodeMixRGB")
+        mix_reed.location = (-180, 140)
+        mix_reed.inputs["Color1"].default_value = spec["secondary_rgba"]
+        mix_reed.inputs["Color2"].default_value = spec["base_rgba"]
+
+        translucent = nodes.new("ShaderNodeBsdfTranslucent")
+        translucent.location = (280, -220)
+        translucent.inputs["Color"].default_value = spec["accent_rgba"]
+
+        mix_backlit = nodes.new("ShaderNodeMixShader")
+        mix_backlit.location = (520, 0)
+        mix_backlit.inputs["Fac"].default_value = 0.14
+
+        links.new(mapping.outputs["Vector"], reed_wave.inputs["Vector"])
+        links.new(reed_wave.outputs["Fac"], mix_reed.inputs["Fac"])
+        links.new(mix_reed.outputs["Color"], bsdf.inputs["Base Color"])
+        links.new(reed_wave.outputs["Fac"], bump.inputs["Height"])
+        links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+        links.new(bsdf.outputs["BSDF"], mix_backlit.inputs[1])
+        links.new(translucent.outputs["BSDF"], mix_backlit.inputs[2])
+        links.new(mix_backlit.outputs["Shader"], out.inputs["Surface"])
+        return mat
+
+    elif pattern == "wool_boucle":
+        # Oatmeal-Taupe Interlocking Wool Bouclé Weave + Microfiber Grazing Sheen
+        checker = nodes.new("ShaderNodeTexChecker")
+        checker.location = (-480, 180)
+        checker.inputs["Color1"].default_value = spec["base_rgba"]
+        checker.inputs["Color2"].default_value = spec["secondary_rgba"]
+        checker.inputs["Scale"].default_value = 36.0
+
+        slub_noise = nodes.new("ShaderNodeTexNoise")
+        slub_noise.location = (-480, -80)
+        slub_noise.inputs["Scale"].default_value = 48.0
+        slub_noise.inputs["Detail"].default_value = 8.0
+        slub_noise.inputs["Distortion"].default_value = 1.8
+
+        links.new(mapping.outputs["Vector"], checker.inputs["Vector"])
+        links.new(mapping.outputs["Vector"], slub_noise.inputs["Vector"])
+        links.new(checker.outputs["Color"], bsdf.inputs["Base Color"])
+        links.new(slub_noise.outputs["Fac"], bump.inputs["Height"])
+        links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+    elif pattern == "chrome_vulcanite":
+        # Exakta VX Brushed Chrome + Voronoi Diamond Vulcanite Cladding
+        voronoi = nodes.new("ShaderNodeTexVoronoi")
+        voronoi.location = (-480, -80)
+        voronoi.distance = 'MANHATTAN'
+        voronoi.inputs["Scale"].default_value = 64.0
+
+        links.new(mapping.outputs["Vector"], voronoi.inputs["Vector"])
+        links.new(voronoi.outputs["Distance"], bump.inputs["Height"])
+        links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+    else:
+        # Orthopedic Plaster-of-Paris Cast with Spiral Bandage Wave & Gauze Relief
+        spiral_wave = nodes.new("ShaderNodeTexWave")
+        spiral_wave.location = (-480, 140)
+        spiral_wave.wave_type = 'BANDS'
+        spiral_wave.bands_direction = 'DIAGONAL'
+        spiral_wave.inputs["Scale"].default_value = 8.0
+        spiral_wave.inputs["Distortion"].default_value = 1.5
+
+        gauze_noise = nodes.new("ShaderNodeTexNoise")
+        gauze_noise.location = (-480, -100)
+        gauze_noise.inputs["Scale"].default_value = 55.0
+        gauze_noise.inputs["Detail"].default_value = 6.0
+
+        links.new(mapping.outputs["Vector"], spiral_wave.inputs["Vector"])
+        links.new(mapping.outputs["Vector"], gauze_noise.inputs["Vector"])
+        links.new(spiral_wave.outputs["Fac"], bump.inputs["Height"])
+        links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+    links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    return mat
+
+
+def assign_jeffries_pbr_materials_to_scene():
+    print("=== Building & Assigning L.B. Jefferies (#2B) Film-Still Calibrated PBR Materials ===")
+    assigned_count = 0
+
+    for spec_id, spec in JEFFRIES_PBR_MATERIAL_SPECS.items():
+        mat = build_principled_pbr_material(spec_id, spec)
+        for mesh_name in spec["target_meshes"]:
+            obj = bpy.data.objects.get(mesh_name)
+            if obj and hasattr(obj.data, "materials"):
+                if len(obj.data.materials) == 0:
+                    obj.data.materials.append(mat)
+                else:
+                    obj.data.materials[0] = mat
+                assigned_count += 1
+                print(
+                    f"  [ASSIGNED PBR] {mesh_name} -> {mat.name} "
+                    f"(R={spec['roughness']:.2f}, IOR={spec['ior']:.2f}, Bump={spec['bump_height_mm']:.2f}mm, SMPTE {spec['smpte_ref']})"
+                )
+
+    print(f"=== Completed 8 Jeffries PBR Materials ({assigned_count} mesh bindings updated) ===")
+
+
+if __name__ == "__main__":
+    assign_jeffries_pbr_materials_to_scene()
+`;
+}
+
 

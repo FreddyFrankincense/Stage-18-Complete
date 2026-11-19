@@ -7,7 +7,9 @@ import {
   CuratedReferenceFrame,
   INITIAL_BUILDING_PARAMETRIC_OVERRIDES,
   INITIAL_CURATED_FRAMES,
+  INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS,
   INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE,
+  JeffriesPbrMaterialSpec,
   LIGHTING_SCENARIOS,
   LightingScenarioPreset,
   ManualFrameVerification,
@@ -97,9 +99,22 @@ export default function App() {
       }
     });
 
+  const [jeffriesPbrMaterials, setJeffriesPbrMaterials] = useState<JeffriesPbrMaterialSpec[]>(
+    () => {
+      try {
+        const saved = localStorage.getItem('stage18_jeffries_pbr_materials_v1');
+        if (!saved) return INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS;
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) && parsed.length === 8
+          ? parsed
+          : INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS;
+      } catch {
+        return INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS;
+      }
+    }
+  );
+
   const [targetScriptTab, setTargetScriptTab] = useState<ScriptTabId>('ffmpeg');
-  const [quickDemoTriggerCount, setQuickDemoTriggerCount] = useState<number>(0);
-  const [showGuidedWorkflowBar, setShowGuidedWorkflowBar] = useState<boolean>(true);
   const [toastNotification, setToastNotification] = useState<{
     id: number;
     message: string;
@@ -138,7 +153,16 @@ export default function App() {
     try {
       localStorage.setItem('stage18_curated_frames_v2', JSON.stringify(curatedFrames));
     } catch {
-      // ignore storage quota errors
+      try {
+        const slimmed = curatedFrames.map((f) =>
+          f.customImageDataUrl && f.customImageDataUrl.length > 260000
+            ? { ...f, customImageDataUrl: undefined }
+            : f
+        );
+        localStorage.setItem('stage18_curated_frames_v2', JSON.stringify(slimmed));
+      } catch {
+        // ignore storage quota errors
+      }
     }
   }, [curatedFrames]);
 
@@ -168,6 +192,17 @@ export default function App() {
       // ignore storage quota errors
     }
   }, [layoutIterations]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'stage18_jeffries_pbr_materials_v1',
+        JSON.stringify(jeffriesPbrMaterials)
+      );
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [jeffriesPbrMaterials]);
 
   // Hydrate learned knowledge profile from server disk (`stage18_learned_knowledge_bank.json`) on mount
   useEffect(() => {
@@ -365,7 +400,7 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         currentProfile: learnedKnowledgeProfile,
-        iterations: iterationsToAssimilate
+        layoutIterations: iterationsToAssimilate
       })
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -599,6 +634,89 @@ export default function App() {
     );
   };
 
+  const handleResetToFreshStage18Copy = () => {
+    try {
+      localStorage.removeItem('stage18_curated_frames_v2');
+      localStorage.removeItem('stage18_parametric_overrides_v2');
+      localStorage.removeItem('stage18_layout_iterations_v2');
+      localStorage.removeItem('stage18_learned_knowledge_v1');
+    } catch {
+      // ignore storage errors
+    }
+
+    const freshUnverifiedOverrides: Record<string, BuildingParametricOverride> = {};
+    for (const [aptId, base] of Object.entries(INITIAL_BUILDING_PARAMETRIC_OVERRIDES)) {
+      freshUnverifiedOverrides[aptId] = {
+        ...base,
+        confidenceScore: 50,
+        contributingFramesCount: 0,
+        lastUpdatedSmpte: 'Awaiting Video Import',
+        lastEngineUsed: 'baseline_prior'
+      };
+    }
+
+    const freshZonePriors = JSON.parse(
+      JSON.stringify(INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE.zonePriors)
+    );
+    for (const key of Object.keys(freshZonePriors)) {
+      freshZonePriors[key].observationCount = 0;
+      freshZonePriors[key].learnedConfidenceScore = 50;
+      freshZonePriors[key].lastUpdatedSmpte = 'Awaiting Video Import';
+    }
+
+    const freshProfile: Stage18LearnedKnowledgeProfile = {
+      ...INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE,
+      version: 1,
+      lastTrainedIso: new Date().toISOString(),
+      totalTrainingRuns: 0,
+      totalFramesAssimilated: 0,
+      sourceStreamFingerprint: {
+        fileName: 'Awaiting_Local_Video_Mount.mkv',
+        fileSizeGb: 0,
+        ebmlHeaderHex: '00 00 00 00',
+        sampledOffsets: []
+      },
+      zonePriors: freshZonePriors,
+      learningHistory: []
+    };
+
+    setParametricOverrides(freshUnverifiedOverrides);
+    setLayoutIterations([]);
+    setCuratedFrames([]);
+    setLiveProjectedTextureUrl(null);
+    setLearnedKnowledgeProfile(freshProfile);
+
+    fetch('/api/learned-knowledge/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ freshProfile })
+    }).catch(() => {});
+
+    triggerToast(
+      'Fresh Stage 18 Copy Ready for Local Video Import Testing',
+      'Cleared cached frames, iterations & knowledge bank (0 frames assimilated across all 7 zones)',
+      'Start Video Test in 75GB Source Lab →',
+      'sourcelab'
+    );
+  };
+
+  const handleRestorePreCalibratedBaseline = () => {
+    setParametricOverrides(INITIAL_BUILDING_PARAMETRIC_OVERRIDES);
+    setCuratedFrames(INITIAL_CURATED_FRAMES);
+    setLearnedKnowledgeProfile(INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE);
+    fetch('/api/learned-knowledge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: INITIAL_STAGE18_LEARNED_KNOWLEDGE_PROFILE })
+    }).catch(() => {});
+    triggerToast(
+      'Restored Pre-Calibrated Stage 18 Reference Baseline',
+      'Reloaded 8 archival reference frames and baseline 7-zone optical priors',
+      'Inspect 3D Workbench →',
+      'workbench'
+    );
+  };
+
   const handleNavigateToWorkbenchWithHeatmap = (targetAptId?: string) => {
     if (targetAptId) {
       const found = STAGE18_APARTMENTS.find((a) => a.id === targetAptId);
@@ -607,70 +725,6 @@ export default function App() {
     setShowConfidenceHeatmap(true);
     setActiveTab('workbench');
   };
-
-  const handleLaunchGlobalQuickDemo = () => {
-    setActiveTab('sourcelab');
-    setQuickDemoTriggerCount((prev) => prev + 1);
-    triggerToast(
-      'Launched 1-Click 75GB Quick Demo',
-      'Verified prerequisites, mounted 74.80 GB MKV header & started Dual-Engine 3D Batch Sweep',
-      'Inspect 3D Workbench →',
-      'workbench'
-    );
-  };
-
-  const approvedDeltasCount = layoutIterations.filter((i) => i.status === 'approved').length;
-  const pendingDeltasCount = layoutIterations.filter((i) => i.status === 'pending_review').length;
-
-  // Next-step recommendation based on current tab & state
-  const nextStepSuggestion = (() => {
-    if (activeTab === 'workbench') {
-      return {
-        prompt:
-          approvedDeltasCount === 0
-            ? 'Next Step: Open the 75GB Source Lab to run the 1-Click Quick Demo or mount your 4K MKV.'
-            : `Next Step: Curate ${curatedFrames.length} reference frames or export your calibrated Blender Python scripts.`,
-        buttonLabel:
-          approvedDeltasCount === 0 ? 'Go to 75GB Source Lab →' : 'Go to Script Generator →',
-        action: () => setActiveTab(approvedDeltasCount === 0 ? 'sourcelab' : 'scripts')
-      };
-    }
-    if (activeTab === 'sourcelab') {
-      return {
-        prompt:
-          approvedDeltasCount > 0
-            ? `${approvedDeltasCount} 3D POV geometry deltas applied! Next: Inspect the 3D Confidence Heatmap or export Blender scripts.`
-            : pendingDeltasCount > 0
-            ? `${pendingDeltasCount} solved frames awaiting review in Step 05 — approve deltas or audit seams in Step 06.`
-            : 'Tip: Click "1-Click Quick Demo" to auto-mount a simulated 74.80 GB MKV and run the 6-frame 3D solver.',
-        buttonLabel:
-          approvedDeltasCount > 0 ? 'Inspect 3D Stage Heatmap →' : 'Open Frame Curator →',
-        action: () =>
-          approvedDeltasCount > 0
-            ? handleNavigateToWorkbenchWithHeatmap()
-            : setActiveTab('frames')
-      };
-    }
-    if (activeTab === 'frames') {
-      return {
-        prompt: `${curatedFrames.filter((f) => f.includedInExport).length}/${curatedFrames.length} curated frames marked for export. Next: Generate FFmpeg extraction & Blender 4.x scripts.`,
-        buttonLabel: 'Generate Pipeline Scripts →',
-        action: () => setActiveTab('scripts')
-      };
-    }
-    if (activeTab === 'plan' || activeTab === 'barriers') {
-      return {
-        prompt: `${completedTaskIds.length}/20 architectural tasks checked off. Next: Generate the executable Python & Bash scripts.`,
-        buttonLabel: 'Open Script Generator →',
-        action: () => setActiveTab('scripts')
-      };
-    }
-    return {
-      prompt: `All 5 pipeline scripts synchronized (${approvedDeltasCount} 3D POV deltas & ${curatedFrames.filter((f) => f.includedInExport).length} frames). Preview in the 3D Stage Workbench.`,
-      buttonLabel: 'Return to 3D Workbench →',
-      action: () => setActiveTab('workbench')
-    };
-  })();
 
   return (
     <div className="min-h-screen bg-[#0B0D11] text-slate-100 flex flex-col">
@@ -708,7 +762,7 @@ export default function App() {
                 : 'border-transparent hover:text-white'
             }`}
           >
-            75GB Source Lab
+            75GB Video Ingest Lab
           </button>
           <button
             onClick={() => setActiveTab('frames')}
@@ -745,107 +799,19 @@ export default function App() {
         {/* Zone 3: 1 primary action */}
         <div className="flex items-center shrink-0">
           <button
-            onClick={() => setActiveTab('sourcelab')}
+            onClick={() => {
+              setActiveTab('sourcelab');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
             className="px-4 py-2 text-xs font-semibold text-slate-950 bg-amber-500 rounded-lg hover:bg-amber-400 transition-colors whitespace-nowrap shrink-0"
           >
-            AI &amp; 75GB Solver Lab
+            Upload / Test 75GB Video
           </button>
         </div>
       </header>
 
       {/* Active Workspace Body */}
       <main className="flex-1">
-        {/* 1-Click Guided Workflow Bar with Next-Step Prompts */}
-        <div className="bg-[#12161F] border-b border-white/10 px-6 py-2.5">
-          <div className="max-w-[1380px] mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono font-semibold text-amber-400">GUIDED WORKFLOW:</span>
-              {(
-                [
-                  {
-                    id: 'workbench' as const,
-                    step: '01',
-                    label: '3D Stage',
-                    meta: selectedApartment.designation.split('·')[0].trim()
-                  },
-                  {
-                    id: 'sourcelab' as const,
-                    step: '02',
-                    label: '75GB Lab',
-                    meta: `${approvedDeltasCount} Deltas`
-                  },
-                  {
-                    id: 'frames' as const,
-                    step: '03',
-                    label: 'Curator',
-                    meta: `${curatedFrames.length} Plates`
-                  },
-                  {
-                    id: 'plan' as const,
-                    step: '04',
-                    label: 'Plan & Risks',
-                    meta: `${completedTaskIds.length}/20 Tasks`
-                  },
-                  {
-                    id: 'scripts' as const,
-                    step: '05',
-                    label: 'Blender/FFmpeg',
-                    meta: '5 Scripts'
-                  }
-                ]
-              ).map((item, idx) => {
-                const isActive =
-                  activeTab === item.id || (item.id === 'plan' && activeTab === 'barriers');
-                return (
-                  <React.Fragment key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab(item.id)}
-                      className={`px-2.5 py-1 rounded border font-mono text-[11px] transition-colors flex items-center gap-1.5 ${
-                        isActive
-                          ? 'bg-amber-500/20 border-amber-400 text-white font-semibold'
-                          : 'bg-[#0B0D11] border-white/10 text-slate-300 hover:border-white/25 hover:text-white'
-                      }`}
-                    >
-                      <span className="text-amber-400">{item.step}.</span>
-                      <span>{item.label}</span>
-                      <span className="text-slate-400 tabular-nums">({item.meta})</span>
-                    </button>
-                    {idx < 4 && <span className="text-slate-600 hidden sm:inline">→</span>}
-                  </React.Fragment>
-                );
-              })}
-            </div>
-
-            <div className="flex items-center gap-2.5 flex-wrap">
-              {showGuidedWorkflowBar && (
-                <span className="text-slate-300 hidden xl:inline">{nextStepSuggestion.prompt}</span>
-              )}
-              <button
-                type="button"
-                onClick={handleLaunchGlobalQuickDemo}
-                className="px-3 py-1.5 rounded-lg bg-[#161C28] hover:bg-slate-800 text-amber-300 border border-amber-500/40 font-semibold whitespace-nowrap"
-              >
-                ⚡ 1-Click Quick Demo
-              </button>
-              <button
-                type="button"
-                onClick={nextStepSuggestion.action}
-                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold whitespace-nowrap"
-              >
-                {nextStepSuggestion.buttonLabel}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowGuidedWorkflowBar((prev) => !prev)}
-                className="text-[11px] font-mono text-slate-400 hover:text-slate-200 hidden xl:inline"
-              >
-                {showGuidedWorkflowBar ? 'Hide Tip' : 'Show Tip'}
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Unified Cross-Tab Toast Notification Banner */}
         {toastNotification && (
           <div className="bg-emerald-950/90 border-b border-emerald-500/40 px-6 py-2.5">
@@ -904,6 +870,14 @@ export default function App() {
             parametricOverrides={parametricOverrides}
             showConfidenceHeatmap={showConfidenceHeatmap}
             onToggleConfidenceHeatmap={() => setShowConfidenceHeatmap((prev) => !prev)}
+            jeffriesPbrMaterials={jeffriesPbrMaterials}
+            onUpdateJeffriesPbrMaterials={setJeffriesPbrMaterials}
+            onOpenBlenderPbrScript={() => handleJumpToScriptTab('pbr_materials')}
+            onOpenBlenderAssetLibraryScript={() => handleJumpToScriptTab('asset_library')}
+            onPinConceptFrame={handlePinAnalyzedFrame}
+            onApplyLiveProjection={(dataUrl) =>
+              handleApplyLiveProjectionTo3D(dataUrl, selectedApartment.id)
+            }
           />
         )}
 
@@ -920,9 +894,10 @@ export default function App() {
             onAddIterations={handleAddIterations}
             onVerifyAndCalibrateIteration={handleVerifyAndCalibrateIteration}
             onResetAllOverrides={handleResetAllOverrides}
+            onResetToFreshVideoTestCopy={handleResetToFreshStage18Copy}
+            onRestorePreCalibratedBaseline={handleRestorePreCalibratedBaseline}
             onNavigateToWorkbenchWithHeatmap={handleNavigateToWorkbenchWithHeatmap}
             onNavigateToDeltaScript={() => handleJumpToScriptTab('deltas')}
-            quickDemoTriggerCount={quickDemoTriggerCount}
             learnedKnowledgeProfile={learnedKnowledgeProfile}
             onUpdateLearnedKnowledgeProfile={handleUpdateLearnedKnowledgeProfile}
             onApplyLearnedPriorsToBuild={handleApplyLearnedPriorsToBuild}
@@ -957,6 +932,8 @@ export default function App() {
             parametricOverrides={parametricOverrides}
             layoutIterations={layoutIterations}
             learnedKnowledgeProfile={learnedKnowledgeProfile}
+            jeffriesPbrMaterials={jeffriesPbrMaterials}
+            onUpdateJeffriesPbrMaterials={setJeffriesPbrMaterials}
           />
         )}
       </main>

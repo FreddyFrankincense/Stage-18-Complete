@@ -8,21 +8,40 @@ import {
   CameraOpticalPreset,
   CuratedReferenceFrame,
   INITIAL_BUILDING_PARAMETRIC_OVERRIDES,
+  INITIAL_JEFFRIES_3D_ASSETS,
+  INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS,
+  Jeffries3DAssetSpec,
+  JeffriesPbrMaterialSpec,
   LIGHTING_SCENARIOS,
   LightingScenarioPreset,
   STAGE18_APARTMENTS,
   Stage18ApartmentUnit
 } from '../data/stage18Data';
+import JeffriesPbrMaterialLab, {
+  getPbrMaterialSignature,
+  synthesizeJeffriesPbrMapsToCanvases
+} from './JeffriesPbrMaterialLab';
+import JeffriesPbrMaterialSwatchGallery from './JeffriesPbrMaterialSwatchGallery';
+import ZonePbrMaterialInspectorPanel, {
+  ViewportGeometryShadingMode
+} from './ZonePbrMaterialInspectorPanel';
+import ConceptualRenderGeneratorModal from './ConceptualRenderGeneratorModal';
+import JeffriesAssetLibraryModal from './JeffriesAssetLibraryModal';
 import {
   Activity,
   Camera,
   ChevronDown,
   ChevronUp,
+  Columns,
   Compass,
   Crosshair,
   Layers,
+  Package,
+  Sparkles,
   Sun,
   Video,
+  Wand2,
+  X,
   Zap
 } from 'lucide-react';
 
@@ -42,6 +61,12 @@ interface Stage18Viewport3DProps {
   parametricOverrides?: Record<string, BuildingParametricOverride>;
   showConfidenceHeatmap?: boolean;
   onToggleConfidenceHeatmap?: () => void;
+  jeffriesPbrMaterials?: JeffriesPbrMaterialSpec[];
+  onUpdateJeffriesPbrMaterials?: (updated: JeffriesPbrMaterialSpec[]) => void;
+  onOpenBlenderPbrScript?: () => void;
+  onOpenBlenderAssetLibraryScript?: () => void;
+  onPinConceptFrame?: (newFrame: CuratedReferenceFrame, dataUrl: string) => void;
+  onApplyLiveProjection?: (dataUrl: string) => void;
 }
 
 // Reusable module-scope math objects to ensure zero GC inside the render loop
@@ -151,11 +176,27 @@ export default function Stage18Viewport3D({
   onClearLiveProjection,
   parametricOverrides = INITIAL_BUILDING_PARAMETRIC_OVERRIDES,
   showConfidenceHeatmap = false,
-  onToggleConfidenceHeatmap
+  onToggleConfidenceHeatmap,
+  jeffriesPbrMaterials = INITIAL_JEFFRIES_APARTMENT_PBR_MATERIALS,
+  onUpdateJeffriesPbrMaterials,
+  onOpenBlenderPbrScript,
+  onOpenBlenderAssetLibraryScript,
+  onPinConceptFrame,
+  onApplyLiveProjection
 }: Stage18Viewport3DProps) {
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
   const [dockCollapsed, setDockCollapsed] = useState(false);
-  const [showInspector, setShowInspector] = useState(true);
+  const [showSplitMaterialInspector, setShowSplitMaterialInspector] = useState(true);
+  const [geometryShadingMode, setGeometryShadingMode] =
+    useState<ViewportGeometryShadingMode>('pbr_textured');
+  const [showInspector, setShowInspector] = useState(false);
+  const [showPbrLabModal, setShowPbrLabModal] = useState(false);
+  const [showAssetLibraryModal, setShowAssetLibraryModal] = useState(false);
+  const [activeAssetId, setActiveAssetId] = useState<string>(INITIAL_JEFFRIES_3D_ASSETS[0].id);
+  const [showConceptRenderModal, setShowConceptRenderModal] = useState(false);
+  const [activePbrMaterialId, setActivePbrMaterialId] = useState<string>(
+    jeffriesPbrMaterials[0]?.id || 'jeff_quarter_sawn_oak_floor'
+  );
   const [showWireframeGrid, setShowWireframeGrid] = useState(false);
   const [showPovSightlineFrustum, setShowPovSightlineFrustum] = useState(true);
   const [flashPulseActive, setFlashPulseActive] = useState(false);
@@ -164,7 +205,9 @@ export default function Stage18Viewport3D({
 
   // Mutable refs for the WebGL loop so React state updates never recreate the scene
   const requestRenderRef = useRef<() => void>(() => {});
+  const captureViewportPngRef = useRef<() => string | null>(() => null);
   const applyProjectedTextureRef = useRef<(url: string | null) => void>(() => {});
+  const applyJeffriesPbrMaterialsRef = useRef<(specs: JeffriesPbrMaterialSpec[]) => void>(() => {});
   const cameraTargetPosRef = useRef(new THREE.Vector3(...activeCameraPreset.position));
   const cameraLookAtRef = useRef(new THREE.Vector3(...activeCameraPreset.target));
   const currentLookAtRef = useRef(new THREE.Vector3(...activeCameraPreset.target));
@@ -173,6 +216,7 @@ export default function Stage18Viewport3D({
   const flashIntensityRef = useRef<number>(0);
   const wireframeRef = useRef<boolean>(false);
   const povFrustumRef = useRef<boolean>(true);
+  const geometryShadingModeRef = useRef<ViewportGeometryShadingMode>(geometryShadingMode);
   const heatmapModeRef = useRef<boolean>(showConfidenceHeatmap);
   const parametricOverridesRef =
     useRef<Record<string, BuildingParametricOverride>>(parametricOverrides);
@@ -181,10 +225,21 @@ export default function Stage18Viewport3D({
   const onSelectApartmentRef = useRef(onSelectApartment);
   onSelectApartmentRef.current = onSelectApartment;
 
+  // Sync 3D geometry shading comparison mode ('pbr_textured' | 'clay_geometry' | 'wireframe_overlay')
+  useEffect(() => {
+    geometryShadingModeRef.current = geometryShadingMode;
+    requestRenderRef.current();
+  }, [geometryShadingMode]);
+
   // Sync live projected texture URL changes
   useEffect(() => {
     applyProjectedTextureRef.current(liveProjectedTextureUrl || null);
   }, [liveProjectedTextureUrl]);
+
+  // Sync L.B. Jefferies's 8 Film-Still PBR Materials into live 3D apartment meshes
+  useEffect(() => {
+    applyJeffriesPbrMaterialsRef.current(jeffriesPbrMaterials);
+  }, [jeffriesPbrMaterials]);
 
   // Sync parametric overrides & confidence heatmap changes into WebGL loop
   useEffect(() => {
@@ -361,6 +416,10 @@ export default function Stage18Viewport3D({
         requestRenderRef.current();
       });
     };
+
+    if (liveProjectedTextureUrl) {
+      applyProjectedTextureRef.current(liveProjectedTextureUrl);
+    }
     const limestoneMat = new THREE.MeshStandardMaterial({
       color: 0xd6d3d1,
       roughness: 0.65,
@@ -371,42 +430,163 @@ export default function Stage18Viewport3D({
       roughness: 0.38,
       metalness: 0.82
     });
-    const jeffWallMat = new THREE.MeshStandardMaterial({
-      color: 0x3f3cbb,
-      roughness: 0.75,
-      metalness: 0.05
+    const jeffWallMat = new THREE.MeshPhysicalMaterial({
+      color: 0xc8c3b4,
+      roughness: 0.78,
+      metalness: 0.0,
+      ior: 1.45
     });
-    jeffWallMat.color.setHex(0x443c34);
 
-    const jeffTrimMat = new THREE.MeshStandardMaterial({
-      color: 0xe7e5e4,
-      roughness: 0.42,
-      metalness: 0.1
+    const jeffTrimMat = new THREE.MeshPhysicalMaterial({
+      color: 0xdcd6c6,
+      roughness: 0.34,
+      metalness: 0.0,
+      ior: 1.49,
+      clearcoat: 0.3,
+      clearcoatRoughness: 0.24
     });
-    const woodFloorMat = new THREE.MeshStandardMaterial({
-      color: 0x5c3a21,
-      roughness: 0.55,
-      metalness: 0.08
+    const woodFloorMat = new THREE.MeshPhysicalMaterial({
+      color: 0x6e472b,
+      roughness: 0.38,
+      metalness: 0.0,
+      ior: 1.52,
+      clearcoat: 0.45,
+      clearcoatRoughness: 0.18
+    });
+    const jeffBlindsMat = new THREE.MeshPhysicalMaterial({
+      color: 0xb88e5a,
+      roughness: 0.64,
+      metalness: 0.0,
+      ior: 1.47,
+      sheen: 0.28,
+      sheenRoughness: 0.48
+    });
+    const jeffUpholsteryMat = new THREE.MeshPhysicalMaterial({
+      color: 0x8a6f5a,
+      roughness: 0.84,
+      metalness: 0.0,
+      ior: 1.44,
+      sheen: 0.88,
+      sheenRoughness: 0.42
     });
     const chromeMat = new THREE.MeshPhysicalMaterial({
-      color: 0xf8fafc,
+      color: 0xd8dce2,
       metalness: 0.92,
-      roughness: 0.15,
-      clearcoat: 1.0
+      roughness: 0.22,
+      ior: 2.48,
+      clearcoat: 0.15
     });
     const blackMetalMat = new THREE.MeshStandardMaterial({
-      color: 0x111827,
+      color: 0x22252a,
       metalness: 0.75,
-      roughness: 0.28
+      roughness: 0.38
+    });
+    const jeffPlasterCastMat = new THREE.MeshPhysicalMaterial({
+      color: 0xeae6dc,
+      roughness: 0.88,
+      metalness: 0.0,
+      ior: 1.46,
+      sheen: 0.35,
+      sheenRoughness: 0.6
     });
     const opticalGlassMat = new THREE.MeshPhysicalMaterial({
-      color: 0xdbeafe,
+      color: 0xebf4f2,
       transparent: true,
-      opacity: isSoftwareGl ? 0.22 : 0.35,
-      roughness: 0.05,
-      metalness: 0.1,
+      opacity: isSoftwareGl ? 0.24 : 0.38,
+      roughness: 0.06,
+      metalness: 0.0,
+      ior: 1.517,
+      clearcoat: 0.2,
       depthWrite: false
     });
+
+    const slotTextureCache = new Map<string, { sig: string; textures: THREE.Texture[] }>();
+    const slotToMaterialMap: Record<string, THREE.MeshPhysicalMaterial> = {
+      floor: woodFloorMat,
+      mullions: jeffTrimMat,
+      walls: jeffWallMat,
+      glass: opticalGlassMat,
+      blinds: jeffBlindsMat,
+      upholstery: jeffUpholsteryMat,
+      chrome_camera: chromeMat,
+      plaster_cast: jeffPlasterCastMat
+    };
+
+    applyJeffriesPbrMaterialsRef.current = (specs: JeffriesPbrMaterialSpec[]) => {
+      const texRes = isSoftwareGl ? 64 : 128;
+      const maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+      specs.forEach((spec) => {
+        const targetMat = slotToMaterialMap[spec.targetThreeSlot];
+        if (!targetMat) return;
+        const sig = getPbrMaterialSignature(spec, texRes);
+        const existingSlot = slotTextureCache.get(spec.targetThreeSlot);
+        if (existingSlot && existingSlot.sig === sig) {
+          // Material signature unchanged — skip redundant CanvasTexture creation & GPU upload
+          return;
+        }
+
+        if (existingSlot) {
+          existingSlot.textures.forEach((t) => t.dispose());
+        }
+
+        const sp = spec.surfaceProperties;
+        const canvases = synthesizeJeffriesPbrMapsToCanvases(spec, texRes);
+        const albedoTex = new THREE.CanvasTexture(canvases.albedoCanvas);
+        albedoTex.colorSpace = THREE.SRGBColorSpace;
+        albedoTex.wrapS = THREE.RepeatWrapping;
+        albedoTex.wrapT = THREE.RepeatWrapping;
+        albedoTex.repeat.set(Math.max(1, sp.uvScale * 0.5), Math.max(1, sp.uvScale * 0.5));
+        albedoTex.anisotropy = maxAniso;
+
+        const roughTex = new THREE.CanvasTexture(canvases.roughnessCanvas);
+        roughTex.colorSpace = THREE.NoColorSpace;
+        roughTex.wrapS = THREE.RepeatWrapping;
+        roughTex.wrapT = THREE.RepeatWrapping;
+        roughTex.repeat.copy(albedoTex.repeat);
+
+        const normalTex = new THREE.CanvasTexture(canvases.normalCanvas);
+        normalTex.colorSpace = THREE.NoColorSpace;
+        normalTex.wrapS = THREE.RepeatWrapping;
+        normalTex.wrapT = THREE.RepeatWrapping;
+        normalTex.repeat.copy(albedoTex.repeat);
+
+        slotTextureCache.set(spec.targetThreeSlot, {
+          sig,
+          textures: [albedoTex, roughTex, normalTex]
+        });
+
+        targetMat.color.set(sp.baseColorHex);
+        if (spec.targetThreeSlot !== 'glass') {
+          targetMat.map = albedoTex;
+          targetMat.roughnessMap = roughTex;
+          targetMat.normalMap = normalTex;
+          targetMat.normalScale.set(
+            sp.normalStrength * (sp.bumpHeightMm * 0.45),
+            sp.normalStrength * (sp.bumpHeightMm * 0.45)
+          );
+        } else {
+          targetMat.opacity = isSoftwareGl
+            ? 0.24
+            : THREE.MathUtils.clamp(1.0 - sp.transmissionWeight * 0.62, 0.18, 0.75);
+        }
+
+        targetMat.roughness = sp.roughness;
+        targetMat.metalness = sp.metalness;
+        targetMat.ior = sp.ior;
+        targetMat.clearcoat = sp.clearcoatWeight;
+        targetMat.clearcoatRoughness = sp.clearcoatRoughness;
+        targetMat.sheen = sp.sheenWeight;
+        targetMat.sheenRoughness = sp.sheenRoughness;
+        if (sp.sheenWeight > 0.05) {
+          targetMat.sheenColor = new THREE.Color(sp.accentColorHex);
+        }
+        targetMat.needsUpdate = true;
+      });
+      requestRenderRef.current();
+    };
+
+    applyJeffriesPbrMaterialsRef.current(jeffriesPbrMaterials);
 
     // Emissive Window Materials (updated dynamically by lighting scenario)
     const windowMaterials: THREE.MeshStandardMaterial[] = [];
@@ -706,7 +886,10 @@ export default function Stage18Viewport3D({
     scene.add(jeffInteriorGroup);
 
     // Floor, Ceiling, and Side Walls
-    const jeffFloor = new THREE.Mesh(new THREE.BoxGeometry(24, 0.6, 16), woodFloorMat);
+    const jeffFloor = new THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial>(
+      new THREE.BoxGeometry(24, 0.6, 16),
+      woodFloorMat
+    );
     jeffFloor.position.set(0, 10.8, 22);
     jeffFloor.receiveShadow = true;
     jeffInteriorGroup.add(jeffFloor);
@@ -763,6 +946,24 @@ export default function Stage18Viewport3D({
     upperBayGlass.renderOrder = 10;
     jeffInteriorGroup.add(upperBayGlass);
 
+    // Split-Bamboo Matchstick Roll-Up Window Shades (3 Bays)
+    const centerBambooRoll = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.18, 4.1, 14),
+      jeffBlindsMat
+    );
+    centerBambooRoll.rotation.z = Math.PI / 2;
+    centerBambooRoll.position.set(0, 19.05, 15.05);
+    jeffInteriorGroup.add(centerBambooRoll);
+
+    [-3.9, 3.9].forEach((bx) => {
+      const flankBlindShade = new THREE.Mesh(
+        new THREE.BoxGeometry(3.1, 2.1, 0.08),
+        jeffBlindsMat
+      );
+      flankBlindShade.position.set(bx, 18.15, 15.05);
+      jeffInteriorGroup.add(flankBlindShade);
+    });
+
     // Hero Prop 1: Exakta VX 35mm SLR + Kilfitt 152mm/400mm Telephoto Lens on Tripod
     const cameraRigGroup = new THREE.Group();
     cameraRigGroup.position.set(1.25, 11.1, 16.3);
@@ -795,14 +996,114 @@ export default function Stage18Viewport3D({
     cameraRigGroup.add(flashDish);
     jeffInteriorGroup.add(cameraRigGroup);
 
-    // Hero Prop 2: Side Worktable, Bausch & Lomb Binoculars & Warm Table Lamp
+    // Hero Prop 1B: Everest & Jennings Convalescent Wheelchair + Full-Leg Plaster Cast + Oriental Daybed
+    const wheelchairGroup = new THREE.Group();
+    wheelchairGroup.position.set(-0.15, 11.1, 18.1);
+    const chairSeat = new THREE.Mesh(
+      new THREE.BoxGeometry(2.0, 0.32, 2.1),
+      jeffUpholsteryMat
+    );
+    chairSeat.position.set(0, 1.65, 0);
+    wheelchairGroup.add(chairSeat);
+
+    const chairBack = new THREE.Mesh(
+      new THREE.BoxGeometry(2.0, 2.3, 0.26),
+      jeffUpholsteryMat
+    );
+    chairBack.position.set(0, 2.85, 0.95);
+    chairBack.rotation.x = 0.12;
+    wheelchairGroup.add(chairBack);
+
+    // Left-Leg Calcified Plaster-of-Paris Orthopedic Cast extended toward window
+    const plasterCastLeg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.19, 2.65, 16),
+      jeffPlasterCastMat
+    );
+    plasterCastLeg.rotation.x = Math.PI / 2 - 0.18;
+    plasterCastLeg.position.set(-0.32, 1.75, -1.45);
+    wheelchairGroup.add(plasterCastLeg);
+
+    // 24-Inch Spoked Rear Drive Wheels on Wheelchair
+    [-1.08, 1.08].forEach((wx) => {
+      const wheelRim = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.06, 12, 24), chromeMat);
+      wheelRim.rotation.y = Math.PI / 2;
+      wheelRim.position.set(wx, 1.05, 0.35);
+      wheelchairGroup.add(wheelRim);
+    });
+    jeffInteriorGroup.add(wheelchairGroup);
+
+    // Hero Prop 1C: Mid-Century Tufted Studio Couch / Daybed + Bolsters + Walnut Plinth
+    const daybedGroup = new THREE.Group();
+    daybedGroup.position.set(5.4, 11.1, 20.4);
+    const daybedPlinth = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.28, 3.2), woodFloorMat);
+    daybedPlinth.position.y = 0.45;
+    daybedGroup.add(daybedPlinth);
+    const daybedMattress = new THREE.Mesh(
+      new THREE.BoxGeometry(6.2, 0.65, 3.0),
+      jeffUpholsteryMat
+    );
+    daybedMattress.position.y = 0.92;
+    daybedGroup.add(daybedMattress);
+    [-2.8, 2.8].forEach((bx) => {
+      const bolster = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.28, 0.28, 2.8, 16),
+        jeffUpholsteryMat
+      );
+      bolster.rotation.x = Math.PI / 2;
+      bolster.position.set(bx, 1.42, 0);
+      daybedGroup.add(bolster);
+    });
+    jeffInteriorGroup.add(daybedGroup);
+
+    // Hero Prop 1D: Danish Walnut Coffee Table & Slatted Magazine Rack in front of Daybed
+    const coffeeTableGroup = new THREE.Group();
+    coffeeTableGroup.position.set(3.2, 11.1, 20.1);
+    const coffeeTop = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.12, 3.8), woodFloorMat);
+    coffeeTop.position.y = 1.38;
+    coffeeTableGroup.add(coffeeTop);
+    const coffeeShelf = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.06, 3.2), jeffBlindsMat);
+    coffeeShelf.position.y = 0.78;
+    coffeeTableGroup.add(coffeeShelf);
+    jeffInteriorGroup.add(coffeeTableGroup);
+
+    // Hero Prop 1E: Tri-Light Brass & Pleated Shantung Floor Lamp beside Couch
+    const floorLampGroup = new THREE.Group();
+    floorLampGroup.position.set(6.8, 11.1, 17.8);
+    const floorLampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 0.14, 20), chromeMat);
+    floorLampBase.position.y = 0.07;
+    floorLampGroup.add(floorLampBase);
+    const floorLampStem = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 4.6, 14), chromeMat);
+    floorLampStem.position.y = 2.35;
+    floorLampGroup.add(floorLampStem);
+    const floorLampShade = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.75, 0.92, 1.05, 24, 1, true),
+      new THREE.MeshStandardMaterial({
+        color: 0xfde68a,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 0.75,
+        side: THREE.DoubleSide
+      })
+    );
+    floorLampShade.position.y = 4.65;
+    floorLampGroup.add(floorLampShade);
+    jeffInteriorGroup.add(floorLampGroup);
+
+    // Hero Prop 2: Swivel Cantilevered Lap Table, Bausch & Lomb Binoculars & Gooseneck Lamp
     const tableGroup = new THREE.Group();
-    tableGroup.position.set(-3.4, 11.1, 16.5);
-    const tableTop = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.14, 1.6), woodFloorMat);
-    tableTop.position.y = 2.1;
+    tableGroup.position.set(-2.4, 11.1, 17.2);
+    const tableTop = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.14, 1.4), woodFloorMat);
+    tableTop.position.y = 2.25;
     tableGroup.add(tableTop);
+    const binocLeft = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.42, 14), blackMetalMat);
+    binocLeft.rotation.x = Math.PI / 2;
+    binocLeft.position.set(0.35, 2.42, -0.15);
+    tableGroup.add(binocLeft);
+    const binocRight = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.42, 14), blackMetalMat);
+    binocRight.rotation.x = Math.PI / 2;
+    binocRight.position.set(0.58, 2.42, -0.15);
+    tableGroup.add(binocRight);
     const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.26, 0.7, 16), chromeMat);
-    lampBase.position.set(-0.5, 2.5, 0.2);
+    lampBase.position.set(-0.6, 2.55, 0.2);
     tableGroup.add(lampBase);
     const lampShade = new THREE.Mesh(
       new THREE.ConeGeometry(0.55, 0.65, 20, 1, true),
@@ -813,9 +1114,44 @@ export default function Stage18Viewport3D({
         side: THREE.DoubleSide
       })
     );
-    lampShade.position.set(-0.5, 3.0, 0.2);
+    lampShade.position.set(-0.6, 3.05, 0.2);
     tableGroup.add(lampShade);
     jeffInteriorGroup.add(tableGroup);
+
+    // Hero Prop 3: 1953 Webcor Automatic Record Player & LP Stack on Rear Credenza
+    const credenzaGroup = new THREE.Group();
+    credenzaGroup.position.set(7.2, 11.1, 23.2);
+    const credenzaCabinet = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.3, 1.6), woodFloorMat);
+    credenzaCabinet.position.y = 1.15;
+    credenzaGroup.add(credenzaCabinet);
+    const recordPlayerBox = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.42, 1.2), jeffUpholsteryMat);
+    recordPlayerBox.position.set(-0.3, 2.52, 0);
+    credenzaGroup.add(recordPlayerBox);
+    const vinylPlatter = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.04, 24), blackMetalMat);
+    vinylPlatter.position.set(-0.3, 2.75, 0);
+    credenzaGroup.add(vinylPlatter);
+    jeffInteriorGroup.add(credenzaGroup);
+
+    // Hero Prop 4: Drop-Leaf Gateleg Dining Table & 6-Panel Woven Split-Bamboo Privacy Screen
+    const diningGroup = new THREE.Group();
+    diningGroup.position.set(-5.8, 11.1, 22.8);
+    const diningTop = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.55, 0.12, 24), woodFloorMat);
+    diningTop.position.y = 2.42;
+    diningGroup.add(diningTop);
+    const diningPedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.45, 2.4, 16), woodFloorMat);
+    diningPedestal.position.y = 1.2;
+    diningGroup.add(diningPedestal);
+    jeffInteriorGroup.add(diningGroup);
+
+    const bambooScreenGroup = new THREE.Group();
+    bambooScreenGroup.position.set(-8.5, 11.1, 23.8);
+    for (let p = 0; p < 5; p++) {
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(1.15, 5.8, 0.1), jeffBlindsMat);
+      panel.position.set((p - 2) * 1.02, 2.9, (p % 2 === 0 ? 1 : -1) * 0.22);
+      panel.rotation.y = (p % 2 === 0 ? 1 : -1) * 0.32;
+      bambooScreenGroup.add(panel);
+    }
+    jeffInteriorGroup.add(bambooScreenGroup);
 
     const jeffApt = STAGE18_APARTMENTS.find((a) => a.id === 'apt-jeffries')!;
     registerApartmentZone(jeffApt, jeffInteriorGroup, [12, 7.5, 4.5], [0, 15.5, 16.0]);
@@ -884,7 +1220,8 @@ export default function Stage18Viewport3D({
       povFrustumGroup.add(new THREE.Line(rayGeo, frustumRayMat));
 
       // Draw splayed wall sightline indicator at each apartment target
-      const ov = INITIAL_BUILDING_PARAMETRIC_OVERRIDES[apt.id];
+      const ov =
+        parametricOverridesRef.current[apt.id] || INITIAL_BUILDING_PARAMETRIC_OVERRIDES[apt.id];
       const splayRad = THREE.MathUtils.degToRad(ov?.cameraSightlineSplayDeg || 8.0);
       const depthDir = new THREE.Vector3()
         .subVectors(targetPt, jeffNodalOrigin)
@@ -950,14 +1287,25 @@ export default function Stage18Viewport3D({
       roughness: 0.45
     });
 
+    const clayGeometryMat = new THREE.MeshStandardMaterial({
+      color: 0xd6d3d1,
+      roughness: 0.62,
+      metalness: 0.04
+    });
+
     const getConfidenceMaterial = (
       conf: number,
       defaultMat: THREE.MeshStandardMaterial
     ): THREE.MeshStandardMaterial => {
-      if (!heatmapModeRef.current) return defaultMat;
-      if (conf >= 80) return heatmapHighMat;
-      if (conf >= 45) return heatmapMedMat;
-      return heatmapLowMat;
+      if (heatmapModeRef.current) {
+        if (conf >= 80) return heatmapHighMat;
+        if (conf >= 45) return heatmapMedMat;
+        return heatmapLowMat;
+      }
+      if (geometryShadingModeRef.current === 'clay_geometry') {
+        return clayGeometryMat;
+      }
+      return defaultMat;
     };
 
     const gardenDefaultMat = gardenBasin.material as THREE.MeshStandardMaterial;
@@ -992,8 +1340,10 @@ export default function Stage18Viewport3D({
         scene.fog.color.set(l.fogColorHex);
       }
 
-      stageGrid.visible = wireframeRef.current;
-      povFrustumGroup.visible = povFrustumRef.current || wireframeRef.current;
+      const isWireOverlay =
+        wireframeRef.current || geometryShadingModeRef.current === 'wireframe_overlay';
+      stageGrid.visible = isWireOverlay;
+      povFrustumGroup.visible = povFrustumRef.current || isWireOverlay;
 
       // Apply Live Parametric Architectural Overrides, Camera-POV Forced-Perspective Scale, Non-Orthogonal Wall Splay & Floor Rake
       const ovMap = parametricOverridesRef.current;
@@ -1110,8 +1460,8 @@ export default function Stage18Viewport3D({
         mat.opacity =
           id === selectedAptIdRef.current
             ? 0.95
-            : wireframeRef.current || heatmapModeRef.current
-            ? 0.45
+            : isWireOverlay || heatmapModeRef.current
+            ? 0.55
             : 0.0;
       });
 
@@ -1169,7 +1519,13 @@ export default function Stage18Viewport3D({
 
         applyDynamicLightingAndSceneState(dt);
         controls.update();
+        if (!heatmapModeRef.current && geometryShadingModeRef.current === 'clay_geometry') {
+          scene.overrideMaterial = clayGeometryMat;
+        } else {
+          scene.overrideMaterial = null;
+        }
         renderer.render(scene, camera);
+        scene.overrideMaterial = null;
 
         const done = () => {
           renderBusy = false;
@@ -1183,6 +1539,17 @@ export default function Stage18Viewport3D({
     }
 
     requestRenderRef.current = requestRender;
+    captureViewportPngRef.current = () => {
+      try {
+        applyDynamicLightingAndSceneState(0.016);
+        controls.update();
+        scene.overrideMaterial = null;
+        renderer.render(scene, camera);
+        return renderer.domElement.toDataURL('image/png');
+      } catch {
+        return null;
+      }
+    };
 
     const onControlStart = () => {
       isTransitioningCameraRef.current = false;
@@ -1214,7 +1581,6 @@ export default function Stage18Viewport3D({
         const apt = hits[0].object.userData.apartment as Stage18ApartmentUnit;
         if (apt) {
           onSelectApartmentRef.current(apt);
-          setShowInspector(true);
         }
       }
     };
@@ -1258,11 +1624,16 @@ export default function Stage18Viewport3D({
       requestRender();
     };
     window.addEventListener('resize', onResize);
+    const resizeObserver = new ResizeObserver(() => {
+      onResize();
+    });
+    resizeObserver.observe(container);
 
     // Initial render
     requestRender();
 
     return () => {
+      resizeObserver.disconnect();
       window.removeEventListener('resize', onResize);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
@@ -1277,6 +1648,8 @@ export default function Stage18Viewport3D({
       if (currentProjectedTex) {
         currentProjectedTex.dispose();
       }
+      slotTextureCache.forEach((entry) => entry.textures.forEach((t) => t.dispose()));
+      slotTextureCache.clear();
       [
         redBrickTex,
         buffBrickTex,
@@ -1286,7 +1659,7 @@ export default function Stage18Viewport3D({
         composerWinTex,
         lonelyWinTex
       ].forEach((t) => t.dispose());
-      [heatmapLowMat, heatmapMedMat, heatmapHighMat].forEach((m) => m.dispose());
+      [heatmapLowMat, heatmapMedMat, heatmapHighMat, clayGeometryMat].forEach((m) => m.dispose());
       if (scene.environment) {
         scene.environment.dispose();
       }
@@ -1316,130 +1689,255 @@ export default function Stage18Viewport3D({
     INITIAL_BUILDING_PARAMETRIC_OVERRIDES[selectedApartment.id];
 
   return (
-    <div className="relative w-full h-[calc(100vh-65px)] overflow-hidden bg-[#0B0D11] select-none">
-      {/* Dedicated Isolated WebGL Canvas Container */}
-      <div ref={canvasMountRef} className="w-full h-full" />
+    <div className="flex w-full h-[calc(100vh-65px)] overflow-hidden bg-[#0B0D11] select-none">
+      {/* LEFT PANE: Interactive 3D Geometry Viewport & HUD Overlays */}
+      <div className="relative flex-1 h-full min-w-0 overflow-hidden">
+        {/* Dedicated Isolated WebGL Canvas Container */}
+        <div ref={canvasMountRef} className="w-full h-full" />
 
-      {/* Optical Viewfinder / Reticle Overlays (Non-obstructive, pointer-events-none) */}
-      {activeCameraPreset.reticleMode === 'exakta_slr' && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-10">
-          <div className="w-[460px] h-[460px] rounded-full border border-amber-400/30 flex items-center justify-center shadow-[0_0_0_9999px_rgba(6,8,12,0.52)]">
-            <div className="w-24 h-24 rounded-full border border-amber-400/45 flex items-center justify-center">
-              <div className="w-full h-[1px] bg-amber-400/40" />
+        {/* Live Comparison Header Pill when Side-by-Side Material Inspector is Active */}
+        {showSplitMaterialInspector && (
+          <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 z-20 hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#12161F]/95 border border-amber-500/35 shadow-xl text-[11px] font-mono">
+            <Columns className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-amber-300 font-semibold">SIDE-BY-SIDE COMPARISON</span>
+            <span className="text-slate-500">·</span>
+            <span className="text-slate-200">
+              Left: 3D Geometry (
+              {geometryShadingMode === 'pbr_textured'
+                ? 'Full PBR Textured'
+                : geometryShadingMode === 'clay_geometry'
+                ? 'Clay Massing'
+                : 'PBR + Wireframe'}
+              )
+            </span>
+            <span className="text-slate-500">↔</span>
+            <span className="text-emerald-300">
+              Right: {selectedApartment.designation} PBR Material Inspector
+            </span>
+          </div>
+        )}
+
+        {/* Optical Viewfinder / Reticle Overlays (Non-obstructive, pointer-events-none) */}
+        {activeCameraPreset.reticleMode === 'exakta_slr' && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-10">
+            <div className="w-[460px] h-[460px] rounded-full border border-amber-400/30 flex items-center justify-center shadow-[0_0_0_9999px_rgba(6,8,12,0.52)]">
+              <div className="w-24 h-24 rounded-full border border-amber-400/45 flex items-center justify-center">
+                <div className="w-full h-[1px] bg-amber-400/40" />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {activeCameraPreset.reticleMode === 'binoculars' && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-10">
-          <div className="flex items-center -space-x-16 shadow-[0_0_0_9999px_rgba(6,8,12,0.62)] rounded-full">
-            <div className="w-[340px] h-[340px] rounded-full border border-slate-400/25" />
-            <div className="w-[340px] h-[340px] rounded-full border border-slate-400/25" />
-          </div>
-        </div>
-      )}
-
-      {/* Top-Left Minimal Spec & Optical Telemetry Strip */}
-      <div className="absolute top-4 left-6 z-20 flex flex-col gap-2 pointer-events-none">
-        <div className="bg-[#12161F]/95 border border-white/10 rounded-lg px-4 py-2.5 shadow-xl">
-          <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
-            <span className="text-amber-400 font-semibold">{activeCameraPreset.cameraBody}</span>
-            <span aria-hidden="true">·</span>
-            <span>{activeCameraPreset.lensModel}</span>
-            <span aria-hidden="true">·</span>
-            <span className="text-slate-200">{activeCameraPreset.focalLengthMm}mm</span>
-            <span aria-hidden="true">·</span>
-            <span>FOV {activeCameraPreset.fovDegrees}°</span>
-          </div>
-          <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
-            <span>Paramount Stage 18 Footprint: 185&apos; × 50&apos; × 40&apos;</span>
-            <span aria-hidden="true">·</span>
-            <span>Lighting: {activeLighting.shortLabel} ({activeLighting.cyclesKelvinKey}K)</span>
-            {hoveredAptName && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="text-amber-300 font-medium">{hoveredAptName}</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Confidence Heatmap Legend when active */}
-        {showConfidenceHeatmap && (
-          <div className="bg-[#12161F]/95 border border-amber-500/40 rounded-lg px-3.5 py-2 shadow-xl flex items-center gap-4 text-[11px] font-mono">
-            <span className="text-amber-300 font-semibold">3D CONFIDENCE HEATMAP:</span>
-            <span className="flex items-center gap-1.5 text-sky-300">
-              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-sky-500" />
-              &lt;45% Baseline Prior
-            </span>
-            <span className="flex items-center gap-1.5 text-amber-300">
-              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-500" />
-              45–79% Partial Scan
-            </span>
-            <span className="flex items-center gap-1.5 text-emerald-300">
-              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500" />
-              ≥80% Multi-Frame Locked
-            </span>
+        {activeCameraPreset.reticleMode === 'binoculars' && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-10">
+            <div className="flex items-center -space-x-16 shadow-[0_0_0_9999px_rgba(6,8,12,0.62)] rounded-full">
+              <div className="w-[340px] h-[340px] rounded-full border border-slate-400/25" />
+              <div className="w-[340px] h-[340px] rounded-full border border-slate-400/25" />
+            </div>
           </div>
         )}
-      </div>
 
-      {/* Top-Right Compact Apartment Spec Drawer & Confidence Heatmap Toggle */}
-      <div className="absolute top-4 right-6 z-20 flex items-center gap-2">
-        {liveProjectedTextureUrl && onClearLiveProjection && (
+        {/* Top-Left Minimal Spec & Optical Telemetry Strip */}
+        <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 pointer-events-none">
+          <div className="bg-[#12161F]/95 border border-white/10 rounded-lg px-3.5 py-2 shadow-xl">
+            <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
+              <span className="text-amber-400 font-semibold">{activeCameraPreset.cameraBody}</span>
+              <span aria-hidden="true">·</span>
+              <span>{activeCameraPreset.lensModel}</span>
+              <span aria-hidden="true">·</span>
+              <span className="text-slate-200">{activeCameraPreset.focalLengthMm}mm</span>
+              <span aria-hidden="true">·</span>
+              <span>FOV {activeCameraPreset.fovDegrees}°</span>
+            </div>
+            <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+              <span>Stage 18: 185&apos; × 50&apos; × 40&apos;</span>
+              <span aria-hidden="true">·</span>
+              <span>Lighting: {activeLighting.shortLabel} ({activeLighting.cyclesKelvinKey}K)</span>
+              {hoveredAptName && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-amber-300 font-medium">{hoveredAptName}</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Confidence Heatmap Legend when active */}
+          {showConfidenceHeatmap && (
+            <div className="bg-[#12161F]/95 border border-amber-500/40 rounded-lg px-3.5 py-2 shadow-xl flex items-center gap-4 text-[11px] font-mono">
+              <span className="text-amber-300 font-semibold">3D CONFIDENCE HEATMAP:</span>
+              <span className="flex items-center gap-1.5 text-sky-300">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-sky-500" />
+                &lt;45% Baseline Prior
+              </span>
+              <span className="flex items-center gap-1.5 text-amber-300">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-500" />
+                45–79% Partial Scan
+              </span>
+              <span className="flex items-center gap-1.5 text-emerald-300">
+                <span className="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-500" />
+                ≥80% Multi-Frame Locked
+              </span>
+            </div>
+          )}
+
+          {/* Sub-Component: L.B. Jefferies's Apartment (#2B) PBR Material Swatch Gallery */}
+          <JeffriesPbrMaterialSwatchGallery
+            materials={jeffriesPbrMaterials}
+            selectedMaterialId={activePbrMaterialId}
+            defaultExpanded={!showSplitMaterialInspector}
+            onSelectMaterial={(mat) => setActivePbrMaterialId(mat.id)}
+            onUpdateMaterialProperty={(matId, updates) => {
+              if (!onUpdateJeffriesPbrMaterials) return;
+              const updated = jeffriesPbrMaterials.map((m) =>
+                m.id === matId
+                  ? {
+                      ...m,
+                      surfaceProperties: {
+                        ...m.surfaceProperties,
+                        ...updates
+                      }
+                    }
+                  : m
+              );
+              onUpdateJeffriesPbrMaterials(updated);
+            }}
+            onOpenFullPbrStudio={(matId) => {
+              if (matId) setActivePbrMaterialId(matId);
+              setShowPbrLabModal(true);
+            }}
+            onFocusJeffriesApartmentIn3D={() => {
+              const jeffApt = STAGE18_APARTMENTS.find((a) => a.id === 'apt-jeffries');
+              if (jeffApt) {
+                onSelectApartment(jeffApt);
+              }
+              const orbitCam = CAMERA_OPTICAL_PRESETS.find((c) => c.id === 'cam-stage18-orbit');
+              if (orbitCam) {
+                onSelectCameraPreset(orbitCam);
+              }
+            }}
+          />
+        </div>
+
+        {/* Top-Right Compact Apartment Spec Drawer & Split Comparison Toolbar */}
+        <div className="absolute top-4 right-4 z-20 flex flex-wrap items-center justify-end gap-1.5 max-w-[68%]">
           <button
-            onClick={onClearLiveProjection}
-            className="px-3 py-2 text-xs font-semibold rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
+            onClick={() => onNavigateToTab('sourcelab')}
+            className="px-3 py-2 text-xs font-semibold rounded-lg bg-amber-500 text-slate-950 border border-amber-400 hover:bg-amber-400 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-md"
+            title="Open the 75GB Video Ingest Lab to upload/mount your Rear Window video file and test frame extraction & 3D synthesis"
           >
             <Video className="w-3.5 h-3.5" />
-            Reset Live 4K Projection
+            Upload / Test 75GB Video
           </button>
-        )}
-        {onToggleConfidenceHeatmap && (
           <button
-            onClick={onToggleConfidenceHeatmap}
-            className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-              showConfidenceHeatmap
-                ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-semibold'
+            onClick={() => setShowConceptRenderModal(true)}
+            className="px-3 py-2 text-xs font-semibold rounded-lg bg-emerald-500 text-slate-950 border border-emerald-400 hover:bg-emerald-400 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-md"
+            title="Generate a conceptual rendering of the current apartment geometry and lighting setup as a stylistic reference for the team"
+          >
+            <Wand2 className="w-3.5 h-3.5" />
+            Generate Concept Render
+          </button>
+          <button
+            onClick={() =>
+              setShowSplitMaterialInspector((prev) => {
+                const next = !prev;
+                if (next) setShowInspector(false);
+                return next;
+              })
+            }
+            className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              showSplitMaterialInspector
+                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
+                : 'bg-[#12161F]/95 text-amber-300 border-amber-500/40 hover:bg-amber-500/15'
+            }`}
+            title="Toggle Live Side-by-Side 3D Geometry + Zone PBR Material Inspector Comparison View"
+          >
+            <Columns className="w-3.5 h-3.5" />
+            {showSplitMaterialInspector ? 'Split Material Inspector: ON' : 'Split Material Inspector'}
+          </button>
+          {liveProjectedTextureUrl && onClearLiveProjection && (
+            <button
+              onClick={onClearLiveProjection}
+              className="px-3 py-2 text-xs font-semibold rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
+            >
+              <Video className="w-3.5 h-3.5" />
+              Reset Live 4K Projection
+            </button>
+          )}
+          {onToggleConfidenceHeatmap && (
+            <button
+              onClick={onToggleConfidenceHeatmap}
+              className={`px-2.5 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                showConfidenceHeatmap
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-semibold'
+                  : 'bg-[#12161F]/95 text-slate-200 border-white/10 hover:border-white/25'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              {showConfidenceHeatmap ? 'Heatmap: ON' : 'Heatmap'}
+            </button>
+          )}
+          <button
+            onClick={() => setShowPovSightlineFrustum((prev) => !prev)}
+            className={`px-2.5 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              showPovSightlineFrustum
+                ? 'bg-sky-500 text-slate-950 border-sky-400 font-semibold'
+                : 'bg-[#12161F]/95 text-slate-200 border-white/10 hover:border-white/25'
+            }`}
+            title="Visualize L.B. Jefferies's Camera-POV Sightline Frustum & Non-Orthogonal Wall-Splay Wedges"
+          >
+            <Crosshair className="w-3.5 h-3.5" />
+            {showPovSightlineFrustum ? 'POV Frustum: ON' : 'POV Frustum'}
+          </button>
+          <button
+            onClick={() => setShowWireframeGrid((prev) => !prev)}
+            className={`px-2.5 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              showWireframeGrid
+                ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
                 : 'bg-[#12161F]/95 text-slate-200 border-white/10 hover:border-white/25'
             }`}
           >
-            <Activity className="w-3.5 h-3.5" />
-            {showConfidenceHeatmap ? 'Heatmap: ON' : 'Confidence Heatmap'}
+            <Compass className="w-3.5 h-3.5" />
+            {showWireframeGrid ? 'Grid: ON' : 'Stage Grid'}
           </button>
-        )}
-        <button
-          onClick={() => setShowPovSightlineFrustum((prev) => !prev)}
-          className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-            showPovSightlineFrustum
-              ? 'bg-sky-500 text-slate-950 border-sky-400 font-semibold'
-              : 'bg-[#12161F]/95 text-slate-200 border-white/10 hover:border-white/25'
-          }`}
-          title="Visualize L.B. Jefferies's Camera-POV Sightline Frustum & Non-Orthogonal Wall-Splay Wedges"
-        >
-          <Crosshair className="w-3.5 h-3.5" />
-          {showPovSightlineFrustum ? 'POV Frustum: ON' : 'POV Frustum Rays'}
-        </button>
-        <button
-          onClick={() => setShowWireframeGrid((prev) => !prev)}
-          className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-            showWireframeGrid
-              ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
-              : 'bg-[#12161F]/95 text-slate-200 border-white/10 hover:border-white/25'
-          }`}
-        >
-          <Compass className="w-3.5 h-3.5" />
-          {showWireframeGrid ? 'Hide Stage Grid' : 'Show Stage Grid'}
-        </button>
-        <button
-          onClick={() => setShowInspector((prev) => !prev)}
-          className="px-3 py-2 text-xs font-medium rounded-lg bg-[#12161F]/95 text-slate-200 border border-white/10 hover:border-white/25 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
-        >
-          <Layers className="w-3.5 h-3.5 text-amber-400" />
-          {showInspector ? 'Hide Zone Spec' : 'Inspect Zone Spec'}
-        </button>
-      </div>
+          <button
+            onClick={() => setShowAssetLibraryModal(true)}
+            className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              showAssetLibraryModal
+                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
+                : 'bg-[#12161F]/95 text-amber-300 border-amber-500/40 hover:bg-amber-500/15'
+            }`}
+            title="Open L.B. Jeffries's Apartment (#2B) 12-Piece 3D Set Dressing & Furniture Asset Library"
+          >
+            <Package className="w-3.5 h-3.5" />
+            3D Asset Library (12)
+          </button>
+          <button
+            onClick={() => setShowPbrLabModal((prev) => !prev)}
+            className={`px-2.5 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              showPbrLabModal
+                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
+                : 'bg-[#12161F]/95 text-amber-300 border-amber-500/40 hover:bg-amber-500/15'
+            }`}
+            title="Open L.B. Jefferies's Apartment (#2B) Film-Still Calibrated PBR Texture & Material Studio"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            PBR Studio (8)
+          </button>
+          <button
+            onClick={() =>
+              setShowInspector((prev) => {
+                const next = !prev;
+                if (next) setShowSplitMaterialInspector(false);
+                return next;
+              })
+            }
+            className="px-2.5 py-2 text-xs font-medium rounded-lg bg-[#12161F]/95 text-slate-200 border border-white/10 hover:border-white/25 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
+          >
+            <Layers className="w-3.5 h-3.5 text-amber-400" />
+            {showInspector ? 'Hide Zone Spec' : 'Zone Spec'}
+          </button>
+        </div>
 
       {/* Slide-Over Architectural Zone Specification Drawer (Collapsible) */}
       {showInspector && (
@@ -1459,7 +1957,7 @@ export default function Stage18Viewport3D({
           </div>
 
           <div className="py-3 space-y-3 text-xs">
-            {/* Converged AI & CV Parametric Dimensions + POV Forced-Perspective Box */}
+            {/* Converged CV Parametric Dimensions + POV Forced-Perspective Box */}
             {selectedAptOverride && (
               <div className="p-2.5 rounded-lg bg-[#0B0D11] border border-white/10 space-y-1.5 font-mono text-[11px]">
                 <div className="flex items-center justify-between">
@@ -1563,6 +2061,40 @@ export default function Stage18Viewport3D({
               <p className="text-slate-300 leading-relaxed">{selectedApartment.occlusionNotes}</p>
             </div>
 
+            {/* L.B. Jefferies's Apartment (#2B) Film-Still PBR Material Suite Summary */}
+            <div className="p-2.5 rounded-lg bg-[#0B0D11] border border-amber-500/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono text-amber-400 font-semibold flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  JEFFRIES APT PBR SUITE (8 SHADERS)
+                </span>
+                <span className="text-[10px] font-mono text-emerald-400">Blender 4.2 Ready</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {jeffriesPbrMaterials.slice(0, 6).map((mat) => (
+                  <div
+                    key={mat.id}
+                    className="px-2 py-1 rounded bg-[#12161F] border border-white/5 flex items-center gap-1.5 text-[10px] font-mono"
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-xs shrink-0 border border-white/20"
+                      style={{ backgroundColor: mat.surfaceProperties.baseColorHex }}
+                    />
+                    <span className="text-slate-200 truncate">{mat.shortLabel}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <button
+                  onClick={() => setShowPbrLabModal(true)}
+                  className="w-full py-1.5 px-2.5 rounded bg-amber-500 text-slate-950 font-semibold text-[11px] hover:bg-amber-400 transition-colors flex items-center justify-center gap-1"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Customize PBR Textures &amp; Maps
+                </button>
+              </div>
+            </div>
+
             {matchingFramesForApt.length > 0 && (
               <div className="pt-2 border-t border-white/10">
                 <div className="text-slate-400 mb-1.5">
@@ -1593,6 +2125,39 @@ export default function Stage18Viewport3D({
             )}
           </div>
         </aside>
+      )}
+
+      {/* Interactive Jeffries PBR Texture & Material Studio Modal Overlay */}
+      {showPbrLabModal && onUpdateJeffriesPbrMaterials && (
+        <div className="absolute inset-x-6 top-16 bottom-24 z-30 overflow-y-auto rounded-2xl bg-[#0B0D11]/95 border border-amber-500/40 p-4 shadow-2xl backdrop-blur-md">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
+            <div className="flex items-center gap-2 text-xs font-mono text-amber-300">
+              <Sparkles className="w-4 h-4" />
+              <span>LIVE 3D VIEWPORT MATERIAL LINK ACTIVE — CHANGES UPDATE APT 2B IN REAL TIME</span>
+            </div>
+            <button
+              onClick={() => setShowPbrLabModal(false)}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white/10 text-white hover:bg-white/20 flex items-center gap-1.5"
+            >
+              <X className="w-3.5 h-3.5" />
+              Close PBR Studio
+            </button>
+          </div>
+          <JeffriesPbrMaterialLab
+            materials={jeffriesPbrMaterials}
+            onUpdateMaterials={onUpdateJeffriesPbrMaterials}
+            initialSelectedMaterialId={activePbrMaterialId}
+            onOpenBlenderPbrScript={() => {
+              setShowPbrLabModal(false);
+              if (onOpenBlenderPbrScript) {
+                onOpenBlenderPbrScript();
+              } else {
+                onNavigateToTab('scripts');
+              }
+            }}
+            compactMode
+          />
+        </div>
       )}
 
       {/* Unified Collapsible Bottom Control Dock (Zero Viewport Occlusion) */}
@@ -1683,6 +2248,24 @@ export default function Stage18Viewport3D({
                 <Zap className="w-3.5 h-3.5" />
                 Fire Flashbulb
               </button>
+
+              <button
+                onClick={() => setShowAssetLibraryModal(true)}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
+                title="Inspect L.B. Jeffries's 12 Set Dressing & Furniture 3D Assets"
+              >
+                <Package className="w-3.5 h-3.5" />
+                Jeffries 3D Assets (12)
+              </button>
+
+              <button
+                onClick={() => setShowConceptRenderModal(true)}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
+                title="Generate Conceptual Stylistic Rendering of Current 3D Geometry & Lighting Setup"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                Concept Render
+              </button>
             </div>
           </div>
 
@@ -1700,7 +2283,9 @@ export default function Stage18Viewport3D({
                     key={apt.id}
                     onClick={() => {
                       onSelectApartment(apt);
-                      setShowInspector(true);
+                      if (!showSplitMaterialInspector) {
+                        setShowInspector(true);
+                      }
                     }}
                     className={`px-2.5 py-1 text-xs rounded-md transition-colors whitespace-nowrap shrink-0 ${
                       isSelected
@@ -1723,6 +2308,67 @@ export default function Stage18Viewport3D({
           </div>
         </div>
       </div>
+      </div>
+
+      {/* RIGHT PANE: Side-by-Side Live Comparison 'Material Inspector' Panel */}
+      {showSplitMaterialInspector && (
+        <ZonePbrMaterialInspectorPanel
+          selectedApartment={selectedApartment}
+          onSelectApartment={onSelectApartment}
+          aptOverride={selectedAptOverride}
+          jeffriesPbrMaterials={jeffriesPbrMaterials}
+          onUpdateJeffriesPbrMaterials={onUpdateJeffriesPbrMaterials}
+          selectedMaterialId={activePbrMaterialId}
+          onSelectMaterialId={(id) => setActivePbrMaterialId(id)}
+          geometryShadingMode={geometryShadingMode}
+          onChangeGeometryShadingMode={setGeometryShadingMode}
+          onOpenFullPbrStudio={(matId) => {
+            if (matId) setActivePbrMaterialId(matId);
+            setShowPbrLabModal(true);
+          }}
+          onCloseSplitView={() => setShowSplitMaterialInspector(false)}
+        />
+      )}
+
+      {/* Conceptual Stylistic Reference Render Generator Modal */}
+      <ConceptualRenderGeneratorModal
+        isOpen={showConceptRenderModal}
+        onClose={() => setShowConceptRenderModal(false)}
+        captureLive3DViewportDataUrl={() => captureViewportPngRef.current()}
+        selectedApartment={selectedApartment}
+        aptOverride={selectedAptOverride}
+        activeCameraPreset={activeCameraPreset}
+        activeLighting={activeLighting}
+        jeffriesPbrMaterials={jeffriesPbrMaterials}
+        onPinToFrameCurator={onPinConceptFrame}
+        onApplyLiveProjectionTo3D={onApplyLiveProjection}
+      />
+
+      {/* L.B. Jeffries Apartment (#2B) 12-Piece 3D Set Dressing & Furniture Asset Library Modal */}
+      <JeffriesAssetLibraryModal
+        isOpen={showAssetLibraryModal}
+        onClose={() => setShowAssetLibraryModal(false)}
+        jeffriesPbrMaterials={jeffriesPbrMaterials}
+        initialAssetId={activeAssetId}
+        onFocusAssetInApartment={(asset: Jeffries3DAssetSpec) => {
+          setActiveAssetId(asset.id);
+          const jeffApt = STAGE18_APARTMENTS.find((a) => a.id === 'apt-jeffries');
+          if (jeffApt) {
+            onSelectApartment(jeffApt);
+          }
+          const [ax, ay, az] = asset.apartmentPlacement.coordinatesFeet;
+          cameraTargetPosRef.current.set(ax * 0.45, ay + 4.2, az - 5.2);
+          cameraLookAtRef.current.set(ax, ay + 1.4, az);
+          targetFovRef.current = 40;
+          isTransitioningCameraRef.current = true;
+          requestRenderRef.current();
+        }}
+        onOpenPbrMaterialStudio={(matId: string) => {
+          setActivePbrMaterialId(matId);
+          setShowPbrLabModal(true);
+        }}
+        onOpenBlenderAssetScriptTab={onOpenBlenderAssetLibraryScript}
+      />
     </div>
   );
 }

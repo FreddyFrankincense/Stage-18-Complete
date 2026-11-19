@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AnalysisEngineMode,
   ArchitecturalLayoutIteration,
@@ -1323,13 +1323,13 @@ export default function AutomatedLayoutSolverPanel({
     });
   };
 
-  // Elapsed timer while engine is actively running
+  // Elapsed timer while engine is actively running (throttled to 250ms to reduce React render churn)
   useEffect(() => {
     if (batchEngineState !== 'running') return;
     const interval = window.setInterval(() => {
-      setBatchElapsedMs((prev) => prev + 100);
-      setCurrentFrameElapsedMs((prev) => prev + 100);
-    }, 100);
+      setBatchElapsedMs((prev) => prev + 250);
+      setCurrentFrameElapsedMs((prev) => prev + 250);
+    }, 250);
     return () => window.clearInterval(interval);
   }, [batchEngineState]);
 
@@ -1434,9 +1434,12 @@ export default function AutomatedLayoutSolverPanel({
     };
 
     sampleHardwareTelemetry();
+    if (batchEngineState !== 'running' && !simulate75GbStress) {
+      return;
+    }
     const timer = window.setInterval(
       sampleHardwareTelemetry,
-      batchEngineState === 'running' ? 240 : 800
+      batchEngineState === 'running' ? 350 : 900
     );
     return () => window.clearInterval(timer);
   }, [
@@ -1676,8 +1679,8 @@ export default function AutomatedLayoutSolverPanel({
           brickCoursesCounted: telemetry.brickCoursesCounted,
           stageLabel:
             cloudAvailable && (!frame.simulatedChallenge || frame.simulatedChallenge === 'none')
-              ? 'Stage 2/3 · Gemini 4 Hydrogen Multimodal Spatial Solve'
-              : 'Stage 2/3 · Local Geometric CV Vanishing-Point Solve'
+              ? 'Stage 2/3 · Bayesian Learned-Prior + Forced-Perspective Photogrammetric Solve'
+              : 'Stage 2/3 · Pure Browser CV Vanishing-Point Solve'
         }
       }));
       setStatusMessage(
@@ -2029,7 +2032,7 @@ export default function AutomatedLayoutSolverPanel({
   const perFrameStreamShareGb =
     activeQueueCount > 0 ? Number((mountedSourceSizeGb / activeQueueCount).toFixed(2)) : 0;
 
-  const frameProgressSegments: BatchFrameProgressSegment[] = (() => {
+  const frameProgressSegments: BatchFrameProgressSegment[] = useMemo(() => {
     let waitingOffset = 0;
     return scanQueue.map((qFrame, idx) => {
       const rt = queueRuntimeMap[qFrame.id] || {
@@ -2088,7 +2091,14 @@ export default function AutomatedLayoutSolverPanel({
         skipped: isSkipped
       };
     });
-  })();
+  }, [
+    scanQueue,
+    queueRuntimeMap,
+    mountedSourceSizeGb,
+    perFrameStreamShareGb,
+    activeFrameRemainingMs,
+    avgFrameDurationMs
+  ]);
 
   // Total 75GB file process remaining time (includes 75GB container keyframe seek/zscale + Dual-Engine CV/AI pass)
   const remaining75GbDemuxMs =
@@ -2286,13 +2296,13 @@ export default function AutomatedLayoutSolverPanel({
                 <div className="flex items-center justify-between text-xs font-semibold">
                   <span className="flex items-center gap-1.5 text-amber-300">
                     <Sparkles className="w-3.5 h-3.5" />
-                    Hybrid Gemini Vision AI + CV
+                    Bayesian Learned-Prior + CV Hybrid
                   </span>
-                  <span className="text-[10px] font-mono text-amber-400">PRIMARY</span>
+                  <span className="text-[10px] font-mono text-amber-400">PRIMARY · NO KEY NEEDED</span>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                  Uses server-side Gemini 4 Hydrogen multimodal reasoning + client CV telemetry,
-                  with automatic failover to Local CV Backup.
+                  Combines 75GB Learned Knowledge Bank priors + Hal Pereira forced-perspective laws +
+                  client Sobel CV telemetry. Runs 100% standalone with zero API keys.
                 </p>
               </button>
 
@@ -3079,7 +3089,7 @@ export default function AutomatedLayoutSolverPanel({
                                 : 'text-sky-300'
                             }
                           >
-                            {rt.engineUsed === 'gemini_cloud_hybrid' ? 'Gemini AI+CV' : 'Local CV'}
+                            {rt.engineUsed === 'gemini_cloud_hybrid' ? 'Bayesian+CV' : 'Browser CV'}
                           </span>
                         </>
                       )}
@@ -3448,7 +3458,7 @@ export default function AutomatedLayoutSolverPanel({
                           }
                         >
                           {iter.engineUsed === 'gemini_cloud_hybrid'
-                            ? 'Engine: Gemini 4 Hydrogen + CV Hybrid'
+                            ? 'Engine: Standalone Bayesian Prior + CV Hybrid'
                             : 'Engine: Local Browser CV Geometric Solver'}
                         </span>
                         <span aria-hidden="true" className="text-slate-500">
